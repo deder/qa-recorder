@@ -1,0 +1,17 @@
+appId: fr.allmanager.qarecorder
+productName: QA Session Recorder
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+# Note (jalon packaging) : ajouter ici extraResources pour embarquer
+# ffmpeg.exe, whisper-cli.exe (CPU + GPU) et le modèle GGUF.
