@@ -45,13 +45,18 @@ def main():
         h = int(s // 3600); m = int((s % 3600) // 60); sec = int(s % 60); ms = int(round((s - int(s)) * 1000))
         return f"{h:02d}:{m:02d}:{sec:02d}.{ms:03d}"
 
+    # Progression = secondes d'audio transcrites / durée totale (monotone).
+    # NB: si une 2e passe est ajoutée un jour, encadrer ce calcul par (passe-1 + frac)/nb_passes.
+    total = info.duration or 0.0
     n = 0
+    last = 0.0
     with open(out, "w", encoding="utf-8") as f:
         for seg in segments:
             f.write(f"[{ts(seg.start)} -> {ts(seg.end)}] {seg.text.strip()}\n")
             n += 1
-            if n % 10 == 0:
-                sys.stdout.write(f"PROGRESS {seg.end:.0f}/{info.duration:.0f}\n")
+            if seg.end - last >= 1.0:
+                last = seg.end
+                sys.stdout.write(f"PROGRESS {seg.end:.2f} {total:.2f}\n")
                 sys.stdout.flush()
     sys.stdout.write(f"DONE {n}\n")
 

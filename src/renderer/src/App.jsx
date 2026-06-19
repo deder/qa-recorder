@@ -41,6 +41,16 @@ export default function App() {
     return () => clearInterval(t)
   }, [refreshCredits])
 
+  // Suivi GLOBAL du traitement : la liste des sessions se met à jour en direct,
+  // même hors de l'écran "Traitement en cours" (le pipeline tourne dans le main).
+  useEffect(() => {
+    const off = api.sessions.onProgress((p) => {
+      setSessions((prev) => prev.map((s) => (s.id === p.id ? { ...s, status: p.status, procStep: p.step, procPct: p.pct } : s)))
+      if (p.done || p.status === 'PRETE' || p.status === 'ERREUR') refreshSessions()
+    })
+    return off
+  }, [refreshSessions])
+
   // Chrono d'enregistrement (continue même hors de l'écran d'enregistrement)
   useEffect(() => {
     if (rec.state !== 'recording') return

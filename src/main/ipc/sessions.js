@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'node:path'
 import fs from 'node:fs'
-import { listSessions, loadSession, saveBugs, deleteSession, writeMeta, sessionDir } from '../sessions/store.js'
+import { listSessions, loadSession, saveBugs, deleteSession, writeMeta, readMeta, sessionDir } from '../sessions/store.js'
 import { runPipeline } from '../pipeline.js'
 import { STATUS } from '../sessions/steps.js'
 import { currentId, abortRecording } from '../recorder.js'
@@ -45,13 +45,8 @@ export function registerSessionsIpc() {
     const pad = (n) => String(n).padStart(2, '0')
     const date = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`
     const base = basename(src).replace(/\.(mkv|mp4)$/i, '')
-    try {
-      fs.mkdirSync(sessionDir(id), { recursive: true })
-      fs.copyFileSync(src, join(sessionDir(id), `session.${ext}`))
-    } catch (err) {
-      console.error('import copy failed', err)
-      return null
-    }
+    fs.mkdirSync(sessionDir(id), { recursive: true })
+    // Session créée tout de suite (l'UI peut afficher "Traitement en cours" sans attendre la copie).
     writeMeta(id, {
       id,
       name: `Import — ${base}`,
@@ -64,7 +59,19 @@ export function registerSessionsIpc() {
       hue: '#8218E2',
       imported: true,
     })
-    runPipeline(id, false, broadcast)
+    // Copie (potentiellement lourde) + pipeline en tâche de fond — ne bloque pas le retour.
+    ;(async () => {
+      try {
+        broadcast('sessions:progress', { id, status: STATUS.PROCESSING, step: 0, pct: 3, detail: 'Copie du fichier importé…' })
+        await fs.promises.copyFile(src, join(sessionDir(id), `session.${ext}`))
+        runPipeline(id, false, broadcast)
+      } catch (err) {
+        console.error('import failed', err)
+        const m = readMeta(id)
+        writeMeta(id, { ...m, status: STATUS.ERREUR, error: 'Échec de l’import du fichier : ' + (err.message || err) })
+        broadcast('sessions:progress', { id, status: STATUS.ERREUR, step: 0, error: 'Échec de l’import du fichier.' })
+      }
+    })()
     return id
   })
 }

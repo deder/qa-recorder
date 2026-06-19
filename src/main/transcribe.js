@@ -71,18 +71,33 @@ function runWhisperCpp(bin, model, wav, outTxt, ctx) {
   })
 }
 
+function mmss(sec) {
+  const s = Math.max(0, Math.round(sec))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 function runFasterWhisper(wav, outTxt, plan, ctx) {
   return new Promise((resolve, reject) => {
     const script = fwScript()
     if (!script) return reject(new Error('Sidecar de transcription introuvable'))
     const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
+    const startWall = Date.now()
     const p = spawn('python', [script, wav, outTxt, plan.model, plan.device, plan.compute], { windowsHide: true, env })
     let err = ''
+    let buf = ''
     p.stdout.on('data', (d) => {
-      const m = String(d).match(/PROGRESS\s+(\d+)\/(\d+)/)
-      if (m) {
-        const pct = Math.min(99, Math.round((parseInt(m[1], 10) / Math.max(1, parseInt(m[2], 10))) * 100))
-        ctx?.emit?.(pct)
+      buf += d.toString()
+      const lines = buf.split('\n')
+      buf = lines.pop() || ''
+      for (const line of lines) {
+        const m = line.match(/PROGRESS\s+([\d.]+)\s+([\d.]+)/)
+        if (!m) continue
+        const done = parseFloat(m[1]); const total = Math.max(0.1, parseFloat(m[2]))
+        const pct = Math.min(99, Math.round((done / total) * 100))
+        // ETA basée sur la vitesse réelle (temps écoulé / audio traité)
+        const wall = (Date.now() - startWall) / 1000
+        const eta = done > 0.5 ? Math.round(((total - done) * wall) / done) : null
+        ctx?.emit?.(pct, { eta, detail: `${mmss(done)} / ${mmss(total)} d'audio transcrit` })
       }
     })
     p.stderr.on('data', (d) => (err += d.toString()))

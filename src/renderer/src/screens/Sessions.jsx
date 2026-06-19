@@ -172,7 +172,7 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
           {filtered.map((s) => {
             const ready = s.status === 'PRETE'
             const err = s.status === 'ERREUR'
-            const clickable = ready || s.status === 'RECORDING'
+            const clickable = true // toutes les sessions sont ouvrables (suivi traitement / erreur / relecture)
             return (
               <div key={s.id} className={clickable ? 'card-hov' : ''} onClick={() => clickable && onOpen(s)} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', cursor: clickable ? 'pointer' : 'default' }}>
                 <Poster s={s} />
@@ -210,7 +210,7 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
           </div>
           {filtered.map((s) => {
             const ready = s.status === 'PRETE'
-            const clickable = ready || s.status === 'RECORDING'
+            const clickable = true // toutes les sessions sont ouvrables (suivi traitement / erreur / relecture)
             return (
               <div key={s.id} className={clickable ? 'row-hov' : ''} onClick={() => clickable && onOpen(s)} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.7fr 1.3fr 1fr', alignItems: 'center', padding: '13px 18px', borderBottom: '1px solid #F0F1F4', fontSize: 13, color: '#000054', cursor: clickable ? 'pointer' : 'default' }}>
                 <div style={{ fontWeight: 600, paddingRight: 12 }}>{s.name}</div>

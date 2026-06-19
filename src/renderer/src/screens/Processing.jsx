@@ -3,12 +3,22 @@ import { PROC_STEPS } from '../lib/tokens.js'
 
 const api = window.api
 
+function formatEta(sec) {
+  if (sec == null) return ''
+  if (sec < 60) return `${sec} s`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return s ? `${m} min ${s} s` : `${m} min`
+}
+
 export default function Processing({ sessionId, onBack, onOpenReplay }) {
   const [name, setName] = useState('')
   const [step, setStep] = useState(0)
   const [pct, setPct] = useState(0)
   const [status, setStatus] = useState('PROCESSING')
   const [error, setError] = useState('')
+  const [eta, setEta] = useState(null)
+  const [detail, setDetail] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -26,6 +36,8 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
       setStep(p.step)
       setPct(p.pct)
       setStatus(p.done ? 'PRETE' : p.status)
+      setEta(p.eta ?? null)
+      setDetail(p.detail ?? '')
       if (p.error) setError(p.error)
       else if (p.status === 'PROCESSING') setError('')
     })
@@ -74,7 +86,7 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#000054' }}>{label}</div>
-                  {st === 'current' && <div style={{ fontSize: 12, color: '#0862A3', marginTop: 2 }}>En cours… {pct}%</div>}
+                  {st === 'current' && <div style={{ fontSize: 12, color: '#0862A3', marginTop: 2 }}>En cours… {pct}%{eta != null ? ` · ~${formatEta(eta)} restantes` : ''}{detail ? ` · ${detail}` : ''}</div>}
                   {st === 'done' && <div style={{ fontSize: 12, color: '#317D51', marginTop: 2 }}>Terminé</div>}
                   {st === 'error' && <div style={{ fontSize: 12, color: '#A13525', marginTop: 2 }}>Échec du traitement</div>}
                 </div>
