@@ -2,7 +2,7 @@ import { app, BrowserWindow, protocol, net, session } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { getSessionsRoot } from './sessions/store.js'
-import { seedIfEmpty, cleanupMockSessions } from './sessions/seed.js'
+import { cleanupMockSessions } from './sessions/seed.js'
 import { registerWindowIpc } from './ipc/window.js'
 import { registerSettingsIpc } from './ipc/settings.js'
 import { registerSessionsIpc } from './ipc/sessions.js'
@@ -54,10 +54,9 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => true)
 
   try {
-    seedIfEmpty()
     cleanupMockSessions()
   } catch (e) {
-    console.error('seed failed', e)
+    console.error('cleanup failed', e)
   }
 
   registerWindowIpc()

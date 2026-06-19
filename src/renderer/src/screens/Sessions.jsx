@@ -167,7 +167,16 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une session…" style={{ border: 'none', outline: 'none', flex: 1, fontFamily: 'Mulish', fontSize: 14, color: '#000054', background: 'transparent' }} />
       </div>
 
-      {view === 'cards' ? (
+      {sessions.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '60px 20px', background: '#fff', border: '1px dashed #D4D7E0', borderRadius: 12, color: '#595987' }}>
+          <div style={{ fontSize: 32 }}>🎬</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#000054' }}>Aucune session pour l’instant</div>
+          <div style={{ fontSize: 13, textAlign: 'center', maxWidth: 460, lineHeight: 1.5 }}>
+            Lance un enregistrement avec <b>＋ Nouvelle session</b>, ou importe une vidéo
+            existante via le menu <b>⋮ → Importer une vidéo</b>.
+          </div>
+        </div>
+      ) : view === 'cards' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 18 }}>
           {filtered.map((s) => {
             const ready = s.status === 'PRETE'
