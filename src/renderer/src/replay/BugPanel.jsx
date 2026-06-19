@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { CATS, CAT_ORDER, SEVS, SEV_ORDER, STATUSES } from '../lib/tokens.js'
 import { fmt } from '../lib/format.js'
 
-export default function BugPanel({ filtered, q, setQ, sortMode, setSort, catSet, toggleCat, sevSet, toggleSev, activeId, onSeek, onCycleStatus, catCounts }) {
+export default function BugPanel({ filtered, q, setQ, sortMode, setSort, catSet, toggleCat, sevSet, toggleSev, activeId, onSeek, onCycleStatus, onOpenNotion, catCounts }) {
   const listRef = useRef(null)
   const cardRefs = useRef({})
 
@@ -95,10 +95,19 @@ export default function BugPanel({ filtered, q, setQ, sortMode, setSort, catSet,
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 100, fontSize: 11, fontWeight: 700, background: cat.bg, color: cat.color }}>
                   <span style={{ width: 6, height: 6, borderRadius: 100, background: cat.color }} />{cat.label}
                 </span>
+                {b.notionUrl && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenNotion?.(b.notionUrl) }}
+                    title="Ouvrir la fiche dans Notion"
+                    style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 100, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: '#EEE5FF', color: '#8218E2' }}
+                  >
+                    ↗ Notion
+                  </button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); onCycleStatus(b) }}
                   title="Cliquer pour changer le statut"
-                  style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 100, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: st.bg, color: st.color }}
+                  style={{ marginLeft: b.notionUrl ? 0 : 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 100, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: st.bg, color: st.color }}
                 >
                   {st.label} ▾
                 </button>

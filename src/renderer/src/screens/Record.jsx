@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { clock } from '../lib/format.js'
 
 const api = window.api
@@ -77,6 +77,7 @@ function MicVuMeter({ deviceId, active, onStatus }) {
 export default function Record({ rec, onStart, onPause, onResume, onStop, onCancel }) {
   const [sources, setSources] = useState([])
   const [sourceType, setSourceType] = useState('screen')
+  const [selectedWindowId, setSelectedWindowId] = useState(null)
   const [mics, setMics] = useState([])
   const [micId, setMicId] = useState('')
   const [dshowNames, setDshowNames] = useState([])
@@ -90,6 +91,8 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
   const paused = rec.state === 'paused'
   const recT = rec.elapsed
 
+  const refreshSources = useCallback(() => { api.system.sources().then(setSources) }, [])
+
   useEffect(() => {
     let cancelled = false
     async function initMics() {
@@ -102,7 +105,7 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
       if (real) setMicId(real.deviceId)
     }
     initMics()
-    api.system.sources().then(setSources)
+    refreshSources()
     api.system.display().then(setDisplay)
     api.recording.audioDevices().then(setDshowNames)
     const now = new Date()
@@ -113,7 +116,16 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
 
   const screenSources = sources.filter((s) => s.type === 'screen')
   const windowSources = sources.filter((s) => s.type === 'window')
-  const preview = (sourceType === 'screen' ? screenSources : windowSources)[0] || screenSources[0]
+  const selectedWindow = windowSources.find((w) => w.id === selectedWindowId) || windowSources[0] || null
+  const preview = sourceType === 'window' ? selectedWindow : (screenSources[0] || null)
+
+  // En mode fenêtre, on garde une sélection valide (défaut = 1ʳᵉ fenêtre).
+  useEffect(() => {
+    if (sourceType !== 'window' || !idle) return
+    if (!windowSources.some((w) => w.id === selectedWindowId)) {
+      setSelectedWindowId(windowSources[0]?.id ?? null)
+    }
+  }, [sourceType, sources, idle]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedMic = mics.find((m) => m.deviceId === micId)
   const micLabel = selectedMic?.label || ''
@@ -122,12 +134,15 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
 
   const micReady = micStatus.available
   const soundOk = micStatus.hasSound
-  const canRecord = !!micId && micReady && soundOk
-  const blockMsg = !micId || !micReady
-    ? 'Micro indisponible — branche un micro et autorise l’accès au micro.'
-    : !soundOk
-      ? 'Aucun son détecté — parle dans le micro pour vérifier avant d’enregistrer.'
-      : null
+  const needWindow = sourceType === 'window' && !selectedWindow
+  const canRecord = !!micId && micReady && soundOk && !needWindow
+  const blockMsg = needWindow
+    ? 'Sélectionne la fenêtre à enregistrer (ou rafraîchis la liste).'
+    : !micId || !micReady
+      ? 'Micro indisponible — branche un micro et autorise l’accès au micro.'
+      : !soundOk
+        ? 'Aucun son détecté — parle dans le micro pour vérifier avant d’enregistrer.'
+        : null
 
   const start = async () => {
     if (!canRecord) return
@@ -135,9 +150,11 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
     await onStart({
       name,
       sourceType,
-      sourceTitle: sourceType === 'window' ? preview?.name : null,
+      sourceId: sourceType === 'window' ? selectedWindow?.id : null,
+      sourceTitle: sourceType === 'window' ? selectedWindow?.name : null,
       sourceLabel: preview?.name || (sourceType === 'screen' ? 'Écran entier' : 'Fenêtre'),
       micName: dshowName,
+      micDeviceId: micId, // deviceId Web (capture native du mode fenêtre)
       fps: String(display.fps || 30),
     })
     setBusy(false)
@@ -157,7 +174,12 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#000054' }}>Source vidéo</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#000054' }}>Source vidéo</div>
+              {idle && sourceType === 'window' && (
+                <button onClick={refreshSources} style={{ display: 'flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 6, border: '1px solid #E0E0E0', background: '#fff', color: '#595987', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>↻ Rafraîchir</button>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <div onClick={() => idle && setSourceType('screen')} style={radio(sourceType === 'screen')}>
                 <span style={{ width: 14, height: 14, borderRadius: 100, border: sourceType === 'screen' ? '4px solid #0C8CE9' : '1px solid #C0C3CE' }} />Écran entier
@@ -166,6 +188,27 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
                 <span style={{ width: 14, height: 14, borderRadius: 100, border: sourceType === 'window' ? '4px solid #0C8CE9' : '1px solid #C0C3CE' }} />Une fenêtre
               </div>
             </div>
+
+            {idle && sourceType === 'window' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 196, overflowY: 'auto', borderRadius: 8, border: '1px solid #E9ECF2', padding: 6 }} className="qa-scroll">
+                {windowSources.length === 0 && (
+                  <div style={{ padding: '14px 8px', textAlign: 'center', color: '#949DB2', fontSize: 12 }}>Aucune fenêtre détectée — ouvre une fenêtre puis rafraîchis.</div>
+                )}
+                {windowSources.map((w) => {
+                  const on = w.id === selectedWindow?.id
+                  return (
+                    <div key={w.id} onClick={() => setSelectedWindowId(w.id)} title={w.name} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: 6, borderRadius: 7, cursor: 'pointer', background: on ? '#F4FAFE' : 'transparent', border: on ? '1.5px solid #0C8CE9' : '1.5px solid transparent' }}>
+                      <div style={{ width: 64, height: 36, flex: 'none', borderRadius: 4, background: '#0d1b2a', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {w.thumbnail ? <img src={w.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#5b6b80', fontSize: 9 }}>—</span>}
+                      </div>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? '#0862A3' : '#3A3A5A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+                      {on && <span style={{ flex: 'none', color: '#0C8CE9', fontSize: 13, fontWeight: 700 }}>✓</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             <div style={{ height: 120, borderRadius: 8, background: '#F4F6FA', border: '1px solid #E9ECF2', overflow: 'hidden', position: 'relative' }}>
               {preview?.thumbnail ? <img src={preview.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#949DB2', fontSize: 12 }}>Aperçu indisponible</div>}
               <div style={{ position: 'absolute', bottom: 6, left: 8, fontSize: 10, fontWeight: 600, color: '#595987', background: 'rgba(255,255,255,0.85)', padding: '2px 6px', borderRadius: 4 }}>{preview?.name || 'Aperçu'}</div>

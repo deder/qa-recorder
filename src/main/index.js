@@ -8,6 +8,12 @@ import { registerSettingsIpc } from './ipc/settings.js'
 import { registerSessionsIpc } from './ipc/sessions.js'
 import { registerSystemIpc } from './ipc/system.js'
 import { registerRecordingIpc } from './ipc/recording.js'
+import { startWhisperService, stopWhisperService } from './whisper-service.js'
+
+// Diffuse un événement à toutes les fenêtres ouvertes.
+function broadcast(channel, payload) {
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
+}
 
 // Protocole privilégié pour servir les vidéos de session (avec support des Range requests).
 protocol.registerSchemesAsPrivileged([
@@ -42,11 +48,14 @@ function createWindow() {
 
 app.whenReady().then(() => {
   // media://local/<sessionId>/session.mp4  ->  <sessionsRoot>/<sessionId>/session.mp4
+  // On transmet les en-têtes de la requête (notamment Range) à net.fetch : sans cela
+  // la réponse est un 200 complet non-seekable et tout saut dans la vidéo (clic chapitre,
+  // drag de la barre) repart à 0. Avec le Range, net.fetch renvoie un 206 → seek OK.
   protocol.handle('media', (request) => {
     const url = new URL(request.url)
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
     const filePath = join(getSessionsRoot(), rel)
-    return net.fetch(pathToFileURL(filePath).toString())
+    return net.fetch(pathToFileURL(filePath).toString(), { headers: request.headers })
   })
 
   // Autorise micro / capture pour le VU-mètre et l'enregistrement (outil interne).
@@ -67,11 +76,18 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // Précharge le modèle de transcription (serveur whisper.cpp résident) dès le lancement,
+  // sans bloquer l'affichage de la fenêtre. La progression est diffusée via 'whisper:status'.
+  startWhisperService(broadcast)
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
+app.on('before-quit', () => stopWhisperService())
+
 app.on('window-all-closed', () => {
+  stopWhisperService()
   if (process.platform !== 'darwin') app.quit()
 })

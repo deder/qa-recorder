@@ -96,13 +96,22 @@ async function main() {
   } else {
     console.log('· binaire whisper.cpp non embarqué (--whisper-zip <url> ou --whisper-dir <dossier>)')
   }
-  // Normalise le nom attendu par transcribe.js
+  // Normalise les noms attendus par le runtime (transcribe.js / whisper-service.js).
+  // CLI one-shot : main.exe -> whisper-cli.exe. Serveur résident : server.exe -> whisper-server.exe.
   if (!fs.existsSync(join(BIN, 'whisper-cli.exe')) && fs.existsSync(join(BIN, 'main.exe'))) {
     fs.copyFileSync(join(BIN, 'main.exe'), join(BIN, 'whisper-cli.exe'))
   }
-  const hasWhisper = fs.existsSync(join(BIN, 'whisper-cli.exe'))
+  if (!fs.existsSync(join(BIN, 'whisper-server.exe')) && fs.existsSync(join(BIN, 'server.exe'))) {
+    fs.copyFileSync(join(BIN, 'server.exe'), join(BIN, 'whisper-server.exe'))
+  }
+  const hasServer = fs.existsSync(join(BIN, 'whisper-server.exe'))
+  const hasCli = fs.existsSync(join(BIN, 'whisper-cli.exe'))
   const hasModel = fs.existsSync(MODELS) && fs.readdirSync(MODELS).some((f) => /\.(bin|gguf)$/i.test(f))
-  console.log(`\nTranscription hors-ligne embarquée : ${hasWhisper && hasModel ? 'OUI ✓' : 'NON (binaire whisper.cpp ' + (hasWhisper ? 'ok' : 'manquant') + ', modèle ' + (hasModel ? 'ok' : 'manquant') + ')'}`)
+  // Le serveur résident est la cible autonome préférée ; la CLI suffit pour un fallback one-shot.
+  const ok = (hasServer || hasCli) && hasModel
+  const bin = hasServer ? 'serveur ok' : hasCli ? 'CLI seule (pas de serveur résident)' : 'manquant'
+  console.log(`\nTranscription hors-ligne embarquée : ${ok ? 'OUI ✓' : 'NON'} (binaire whisper.cpp : ${bin}, modèle ${hasModel ? 'ok' : 'manquant'})`)
+  if (ok && !hasServer) console.log('  ⚠ Pas de whisper-server.exe : le modèle sera rechargé à chaque transcription (mode one-shot).')
   console.log('Prêt. `npm run dist` produira l’installeur avec ces ressources embarquées.')
 }
 

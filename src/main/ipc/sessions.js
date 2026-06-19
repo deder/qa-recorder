@@ -1,10 +1,13 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { join, basename } from 'node:path'
 import fs from 'node:fs'
 import { listSessions, loadSession, saveBugs, deleteSession, writeMeta, readMeta, sessionDir } from '../sessions/store.js'
 import { runPipeline, abortPipeline } from '../pipeline.js'
 import { STATUS } from '../sessions/steps.js'
 import { currentId, abortRecording } from '../recorder.js'
+import { getSettings } from '../settings-store.js'
+import { pushBugsToNotion } from '../notion.js'
+import { exportSessionPdf } from '../report.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -35,6 +38,53 @@ export function registerSessionsIpc() {
       await sleep(250)
     }
     return deleteSession(id)
+  })
+
+  // Génère un rapport PDF de la session et l'ouvre dans le lecteur par défaut.
+  ipcMain.handle('sessions:export-pdf', async (e, id) => {
+    try {
+      const out = await exportSessionPdf(id)
+      await shell.openPath(out)
+      return { ok: true, path: out }
+    } catch (err) {
+      console.error('export-pdf failed', err)
+      return { ok: false, error: String(err.message || err) }
+    }
+  })
+
+  // Crée des fiches Notion à partir des bugs (sélectionnés par bugIds, ou tous).
+  // Anti-doublon : un bug déjà poussé (notionPageId présent) est sauté.
+  ipcMain.handle('notion:push-bugs', async (e, id, bugIds) => {
+    const session = loadSession(id)
+    if (!session) return { ok: false, error: 'Session introuvable.' }
+    const { notionToken, notionDatabaseId } = getSettings()
+    const all = session.bugs || []
+    const idSet = Array.isArray(bugIds) && bugIds.length ? new Set(bugIds) : null
+    const selected = all.filter((b) => !idSet || idSet.has(b.id))
+    const toPush = selected.filter((b) => !b.notionPageId)
+    const skipped = selected.length - toPush.length
+    if (!toPush.length) return { ok: true, created: 0, skipped, failed: 0, results: [] }
+
+    let results
+    try {
+      results = await pushBugsToNotion(session.meta, toPush, {
+        token: notionToken,
+        databaseId: notionDatabaseId,
+        onProgress: (p) => broadcast('notion:progress', { id, ...p }),
+      })
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) }
+    }
+
+    // Persiste notionUrl/notionPageId sur les bugs créés avec succès.
+    const ok = new Map(results.filter((r) => r.ok).map((r) => [r.bugId, r]))
+    if (ok.size) {
+      const next = all.map((b) => (ok.has(b.id) ? { ...b, notionPageId: ok.get(b.id).notionPageId, notionUrl: ok.get(b.id).notionUrl } : b))
+      saveBugs(id, next)
+    }
+    const created = ok.size
+    const failed = results.filter((r) => !r.ok).length
+    return { ok: failed === 0, created, skipped, failed, error: results.find((r) => !r.ok)?.error, results }
   })
 
   // Importe un fichier MKV/MP4 comme nouvelle session et lance son traitement.

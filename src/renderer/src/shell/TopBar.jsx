@@ -1,3 +1,5 @@
+import UserMenu from './UserMenu.jsx'
+
 function CreditBadge({ credits }) {
   if (!credits) return null
   if (credits.error) {
@@ -17,7 +19,26 @@ function CreditBadge({ credits }) {
   )
 }
 
-export default function TopBar({ gPct, gLabel, credits }) {
+// Statut du modèle de transcription préchargé au démarrage.
+function WhisperBadge({ whisper }) {
+  const s = whisper?.state
+  if (!s || s === 'idle') return null
+  const conf = {
+    loading: { label: 'Chargement du modèle…', icon: '⏳', fg: '#FFE2B0', bd: 'rgba(237,108,2,0.5)', bg: 'rgba(237,108,2,0.18)', tip: 'Chargement du modèle de transcription en mémoire…' },
+    ready: { label: 'Modèle prêt', icon: '✓', fg: '#86E0AC', bd: 'rgba(71,179,117,0.5)', bg: 'rgba(71,179,117,0.18)', tip: 'Modèle de transcription chargé et résident.' },
+    unavailable: { label: 'Modèle absent', icon: '⚠', fg: '#FFD9D2', bd: 'rgba(230,76,53,0.45)', bg: 'rgba(230,76,53,0.18)', tip: 'Transcription hors-ligne non embarquée (whisper.cpp). Fallback Python si disponible.' },
+    error: { label: 'Modèle en erreur', icon: '⚠', fg: '#FFD9D2', bd: 'rgba(230,76,53,0.5)', bg: 'rgba(230,76,53,0.18)', tip: whisper?.reason || 'Erreur du serveur de transcription.' },
+  }[s]
+  if (!conf) return null
+  return (
+    <div title={conf.tip} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 28, padding: '0 12px', borderRadius: 100, background: conf.bg, border: `1px solid ${conf.bd}` }}>
+      <span style={{ fontSize: 12, color: conf.fg, fontWeight: 800 }}>{conf.icon}</span>
+      <span style={{ fontSize: 12, color: conf.fg, fontWeight: 600 }}>{conf.label}</span>
+    </div>
+  )
+}
+
+export default function TopBar({ gPct, gLabel, credits, whisper, onSearch, go, version, onOpenStorage }) {
   return (
     <div style={{ height: 56, flex: 'none', background: '#000054', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#fff' }}>
@@ -34,10 +55,11 @@ export default function TopBar({ gPct, gLabel, credits }) {
           </div>
           <div style={{ fontSize: 13, color: '#fff', fontWeight: 700 }}>{gLabel}</div>
         </div>
+        <WhisperBadge whisper={whisper} />
         <CreditBadge credits={credits} />
         <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.18)' }} />
-        <div style={{ width: 34, height: 34, borderRadius: 100, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15 }}>⌕</div>
-        <div style={{ width: 34, height: 34, borderRadius: 100, background: '#0C8CE9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>RM</div>
+        <div onClick={onSearch} title="Rechercher (Ctrl+K)" style={{ width: 34, height: 34, borderRadius: 100, background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15, cursor: 'pointer' }}>⌕</div>
+        <UserMenu version={version} go={go} onOpenStorage={onOpenStorage} />
       </div>
     </div>
   )

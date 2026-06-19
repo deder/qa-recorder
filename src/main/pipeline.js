@@ -1,10 +1,25 @@
 import { join } from 'node:path'
 import fs from 'node:fs'
+import { screen } from 'electron'
 import { sessionDir, readMeta, writeMeta } from './sessions/store.js'
 import { runFfmpeg, probeDuration, hasAudioStream } from './ffmpeg.js'
 import { STATUS, PROC_STEPS } from './sessions/steps.js'
 import { transcribe as realTranscribe } from './transcribe.js'
 import { analyze as realAnalyze } from './analyze.js'
+
+// Canevas de normalisation pour les captures fenêtre (webm) : résolution de l'écran
+// principal (dimensions paires). La fenêtre ne pouvant pas dépasser l'écran, son contenu
+// est letterboxé sans rognage ni déformation.
+function displayCanvas() {
+  try {
+    const d = screen.getPrimaryDisplay()
+    let w = Math.round(d.size.width * d.scaleFactor)
+    let h = Math.round(d.size.height * d.scaleFactor)
+    w -= w % 2; h -= h % 2
+    if (w >= 2 && h >= 2) return { w, h }
+  } catch { /* écran indisponible : valeur de repli */ }
+  return { w: 1920, h: 1080 }
+}
 
 const running = new Set()
 const aborted = new Set()
@@ -39,7 +54,7 @@ function isStepComplete(id, step) {
   const ex = (f) => fs.existsSync(join(d, f))
   const nonEmpty = (f) => { try { return fs.statSync(join(d, f)).size > 0 } catch { return false } }
   switch (step) {
-    case 0: return ex('session.mkv') || ex('session.mp4')
+    case 0: return ex('session.mkv') || ex('session.mp4') || ex('session.webm')
     case 1: return ex('session.mp4')
     case 2: return nonEmpty('transcript.txt')
     case 3: try { return (JSON.parse(fs.readFileSync(join(d, 'bugs.json'), 'utf-8')).bugs || []).length > 0 } catch { return false }
@@ -51,7 +66,11 @@ async function finalizeStep(id, fromStart, ctx) {
   const dir = sessionDir(id)
   const mkv = join(dir, 'session.mkv')
   const mp4 = join(dir, 'session.mp4')
-  const segs = listSegments(id)
+  const allSegs = listSegments(id)
+  // On ignore les segments vides : un segment 0 octet (capture qui n'a rien produit,
+  // ffmpeg tué avant d'écrire l'en-tête) ferait échouer la concaténation
+  // avec "EBML header parsing failed".
+  const segs = allSegs.filter((s) => { try { return fs.statSync(s).size > 0 } catch { return false } })
   const onChild = (c) => ctx?.register?.(c)
 
   if (segs.length) {
@@ -62,8 +81,13 @@ async function finalizeStep(id, fromStart, ctx) {
     }
     return
   }
-  // Enregistrement maison (MKV) ou vidéo importée (MP4/MKV) : la source doit exister.
-  if (fs.existsSync(mkv) || fs.existsSync(mp4)) return
+  // Enregistrement maison (MKV), capture native fenêtre (WebM) ou vidéo importée (MP4/MKV) :
+  // une source existante suffit, rien à concaténer.
+  if (fs.existsSync(mkv) || fs.existsSync(mp4) || fs.existsSync(join(dir, 'session.webm'))) return
+  // Des segments ont bien été créés mais tous vides → la capture n'a rien enregistré.
+  if (allSegs.length) {
+    throw new Error("L'enregistrement n'a capturé aucune image. La fenêtre ciblée était introuvable ou a été fermée trop tôt — vérifiez la fenêtre sélectionnée et réessayez.")
+  }
   throw new Error('Aucun fichier vidéo pour cette session.')
 }
 
@@ -71,6 +95,7 @@ async function convertStep(id, fromStart, ctx) {
   const dir = sessionDir(id)
   const mkv = join(dir, 'session.mkv')
   const mp4 = join(dir, 'session.mp4')
+  const webm = join(dir, 'session.webm')
   const wav = join(dir, 'audio.wav')
   const onChild = (c) => ctx?.register?.(c)
 
@@ -81,9 +106,17 @@ async function convertStep(id, fromStart, ctx) {
       // codecs incompatibles avec MP4 → ré-encodage
       await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', mkv, '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-movflags', '+faststart', mp4], { onChild })
     }
+  } else if (fs.existsSync(webm) && (fromStart || !fs.existsSync(mp4))) {
+    // Capture native (mode fenêtre) : WebM → MP4. On normalise vers un canevas fixe car
+    // le flux peut changer de résolution si la fenêtre est redimensionnée (le H.264/MP4
+    // exige des dimensions constantes ; eval=frame absorbe les changements). Contenu
+    // letterboxé, jamais rogné ni déformé.
+    const { w, h } = displayCanvas()
+    const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease:eval=frame,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:eval=frame,format=yuv420p`
+    await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', webm, '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-movflags', '+faststart', mp4], { onChild })
   }
 
-  const audioSrc = fs.existsSync(mkv) ? mkv : mp4
+  const audioSrc = fs.existsSync(mkv) ? mkv : fs.existsSync(webm) ? webm : mp4
   if (fs.existsSync(audioSrc) && (fromStart || !fs.existsSync(wav))) {
     if (await hasAudioStream(audioSrc)) {
       await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSrc, '-vn', '-ac', '1', '-ar', '16000', wav], { onChild })

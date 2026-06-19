@@ -13,6 +13,9 @@ function defaults() {
     resolution: '1920 × 1080',
     fps: '30 fps',
     computeMode: 'auto', // auto | gpu | cpu
+    // Intégration Notion (jalon tickets). databaseId pré-rempli sur la base "🐛 QA Recette – Suivi des problèmes".
+    notionToken: '',
+    notionDatabaseId: '3f0635db-81b5-4d38-8cf4-2f637e6a53c5',
   }
 }
 

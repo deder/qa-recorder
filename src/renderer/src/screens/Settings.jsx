@@ -72,6 +72,25 @@ export default function Settings({ onSaved }) {
       </div>
 
       <div style={card}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#000054' }}>Intégration Notion</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={label}>Token d’intégration Notion</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="password" value={s.notionToken || ''} onChange={set('notionToken')} placeholder="ntn_... ou secret_..." style={{ ...field, flex: 1 }} />
+            <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', borderRadius: 8, background: s.notionToken ? '#E8F5EC' : '#F3F4F6', color: s.notionToken ? '#317D51' : '#949DB2', fontSize: 13, fontWeight: 700 }}>{s.notionToken ? '✓ Renseigné' : '— Absent'}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={label}>Base de données cible (ID)</div>
+          <input value={s.notionDatabaseId || ''} onChange={set('notionDatabaseId')} placeholder="3f0635db..." style={field} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 8, background: '#F4FAFE', border: '1px solid #D7EAFB' }}>
+          <span style={{ color: '#0C8CE9', fontSize: 16 }}>ⓘ</span>
+          <div style={{ fontSize: 13, color: '#0862A3' }}>Crée une intégration interne dans Notion, puis <b>partage la base cible avec cette intégration</b>. Les bugs deviennent des fiches dans « 🐛 QA Recette – Suivi des problèmes » depuis l’écran de relecture.</div>
+        </div>
+      </div>
+
+      <div style={card}>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#000054' }}>Stockage & encodage</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={label}>Dossier de stockage</div>

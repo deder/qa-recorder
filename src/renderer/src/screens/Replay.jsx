@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import VideoStage from '../replay/VideoStage.jsx'
 import Transport from '../replay/Transport.jsx'
 import BugPanel from '../replay/BugPanel.jsx'
+import TicketsDialog from '../components/TicketsDialog.jsx'
 import { useKeyboardNav } from '../lib/useKeyboardNav.js'
 import { SEVS, STATUS_ORDER, FIXED_STATUSES } from '../lib/tokens.js'
 import { fmt } from '../lib/format.js'
+import { bugsToMarkdown } from '../lib/ticketFormat.js'
 
 const api = window.api
 
@@ -19,6 +21,9 @@ export default function Replay({ sessionId, onBack }) {
   const [sortMode, setSortMode] = useState('tc')
   const [catSet, setCatSet] = useState(() => new Set())
   const [sevSet, setSevSet] = useState(() => new Set())
+  const [ticketsOpen, setTicketsOpen] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [copyMsg, setCopyMsg] = useState('')
   const videoRef = useRef(null)
 
   useEffect(() => {
@@ -33,6 +38,22 @@ export default function Replay({ sessionId, onBack }) {
     })
     return () => { alive = false }
   }, [sessionId])
+
+  // Recharge uniquement les bugs (après envoi Notion : récupère notionUrl).
+  const reloadBugs = useCallback(() => {
+    api.sessions.load(sessionId).then((res) => {
+      if (res) setBugs((res.bugs || []).slice().sort((a, b) => a.tc - b.tc))
+    })
+  }, [sessionId])
+
+  const exportPdf = useCallback(async () => {
+    setPdfBusy(true)
+    try { await api.sessions.exportPdf(sessionId) } finally { setPdfBusy(false) }
+  }, [sessionId])
+
+  const sendToNotion = useCallback((bugIds) => api.sessions.pushToNotion(sessionId, bugIds), [sessionId])
+
+  const openNotion = useCallback((url) => { if (url) api.system.openExternal(url) }, [])
 
   // Ordre chronologique (navigation, marqueurs, bug actif)
   const chrono = useMemo(() => bugs.slice().sort((a, b) => a.tc - b.tc), [bugs])
@@ -114,6 +135,14 @@ export default function Replay({ sessionId, onBack }) {
   const fixed = bugs.filter((b) => FIXED_STATUSES.includes(b.status)).length
   const fixedPct = bugs.length ? Math.round((fixed / bugs.length) * 100) : 0
 
+  const copyMarkdown = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(bugsToMarkdown(meta, chrono))
+      setCopyMsg('Copié ✓')
+      setTimeout(() => setCopyMsg(''), 1600)
+    } catch { setCopyMsg('Échec copie') }
+  }, [meta, chrono])
+
   const btn = (bg, color, border) => ({ display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 14px', borderRadius: 8, background: bg, color, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: border ? `1px solid ${border}` : 'none' })
 
   return (
@@ -132,8 +161,9 @@ export default function Replay({ sessionId, onBack }) {
           </div>
         </div>
         <div style={{ width: 1, height: 26, background: '#E5E7EB' }} />
-        <button className="hov-grey" style={btn('#fff', '#000054', '#E0E0E0')} title="À venir (jalon export)">↧ Export PDF</button>
-        <button className="hov-navy" style={btn('#000054', '#fff')} title="À venir (jalon tickets)">＋ Générer les tickets</button>
+        <button className="hov-grey" style={btn('#fff', '#000054', '#E0E0E0')} onClick={copyMarkdown} disabled={!bugs.length} title="Copier les bugs au format Markdown">⧉ {copyMsg || 'Markdown'}</button>
+        <button className="hov-grey" style={btn('#fff', '#000054', '#E0E0E0')} onClick={exportPdf} disabled={pdfBusy || !bugs.length} title="Exporter un rapport PDF de la session">{pdfBusy ? '⏳ Génération…' : '↧ Export PDF'}</button>
+        <button className="hov-navy" style={btn('#000054', '#fff')} onClick={() => setTicketsOpen(true)} disabled={!bugs.length} title="Créer des fiches dans Notion">＋ Générer les tickets</button>
       </div>
 
       {/* body */}
@@ -177,9 +207,18 @@ export default function Replay({ sessionId, onBack }) {
           activeId={activeId}
           onSeek={seek}
           onCycleStatus={cycleStatus}
+          onOpenNotion={openNotion}
           catCounts={catCounts}
         />
       </div>
+
+      <TicketsDialog
+        open={ticketsOpen}
+        bugs={bugs}
+        onClose={() => setTicketsOpen(false)}
+        onSend={sendToNotion}
+        onSent={reloadBugs}
+      />
     </div>
   )
 }

@@ -4,6 +4,8 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { sessionDir } from './sessions/store.js'
 import { transcriptionPlan } from './gpu.js'
+import { srtToTxt } from './srt.js'
+import { isWhisperServiceUsable, transcribeViaServer } from './whisper-service.js'
 
 // Localise un binaire whisper.cpp embarqué (cible distribuable, jalon J4).
 function whisperCppBin() {
@@ -32,19 +34,6 @@ function fwScript() {
     join(process.cwd(), 'src', 'main', 'py', 'transcribe_fw.py'),
   ]
   return candidates.find((p) => fs.existsSync(p)) || null
-}
-
-function srtToTxt(srt) {
-  // SRT -> lignes "[HH:MM:SS.mmm -> ...] texte"
-  const blocks = srt.split(/\r?\n\r?\n/)
-  const out = []
-  for (const b of blocks) {
-    const m = b.match(/(\d\d:\d\d:\d\d[,.]\d\d\d)\s*-->\s*(\d\d:\d\d:\d\d[,.]\d\d\d)\s*([\s\S]*)/)
-    if (!m) continue
-    const text = m[3].replace(/\s+/g, ' ').trim()
-    if (text) out.push(`[${m[1].replace(',', '.')} -> ${m[2].replace(',', '.')}] ${text}`)
-  }
-  return out.join('\n') + '\n'
 }
 
 function runWhisperCpp(bin, model, wav, outTxt, ctx) {
@@ -123,12 +112,18 @@ export async function transcribe(id, fromStart, ctx) {
   if (!fs.existsSync(wav)) throw new Error('Audio introuvable pour la transcription (audio.wav)')
 
   ctx?.emit?.(1, { detail: 'Chargement du modèle…' })
-  const bin = whisperCppBin()
-  const model = whisperCppModel()
-  if (bin && model) {
-    await runWhisperCpp(bin, model, wav, txt, ctx)
+  // Priorité : serveur whisper.cpp résident (modèle déjà chargé, app autonome).
+  // Replis : whisper.cpp CLI one-shot, puis faster-whisper Python (dev).
+  if (isWhisperServiceUsable()) {
+    await transcribeViaServer(wav, txt, ctx)
   } else {
-    await runFasterWhisper(wav, txt, transcriptionPlan(), ctx)
+    const bin = whisperCppBin()
+    const model = whisperCppModel()
+    if (bin && model) {
+      await runWhisperCpp(bin, model, wav, txt, ctx)
+    } else {
+      await runFasterWhisper(wav, txt, transcriptionPlan(), ctx)
+    }
   }
   ctx?.emit?.(100)
 }

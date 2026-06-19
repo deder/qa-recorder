@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { startWindowCapture } from './lib/windowRecorder.js'
 import TitleBar from './shell/TitleBar.jsx'
 import TopBar from './shell/TopBar.jsx'
 import NavRail from './shell/NavRail.jsx'
@@ -7,6 +8,7 @@ import Record from './screens/Record.jsx'
 import Processing from './screens/Processing.jsx'
 import Replay from './screens/Replay.jsx'
 import Settings from './screens/Settings.jsx'
+import SearchPalette from './components/SearchPalette.jsx'
 
 const api = window.api
 
@@ -19,11 +21,18 @@ export default function App() {
   const [version, setVersion] = useState('0.9.2')
   const [credits, setCredits] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [storage, setStorage] = useState(null)
+  const [whisper, setWhisper] = useState({ state: 'idle' })
   // État d'enregistrement GLOBAL (persiste quand on change d'écran)
   const [rec, setRec] = useState({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
 
   const refreshSessions = useCallback(async () => {
     setSessions(await api.sessions.list())
+  }, [])
+
+  const refreshStorage = useCallback(() => {
+    api.system.storageUsage().then(setStorage).catch(() => {})
   }, [])
 
   const refreshCredits = useCallback(() => {
@@ -32,9 +41,28 @@ export default function App() {
 
   useEffect(() => {
     refreshSessions()
+    refreshStorage()
     api.settings.get().then(setSettings)
     api.system.version().then(setVersion)
-  }, [refreshSessions])
+  }, [refreshSessions, refreshStorage])
+
+  // Statut du modèle de transcription (préchargé au démarrage) : état initial + flux d'événements.
+  useEffect(() => {
+    api.whisper.status().then(setWhisper).catch(() => {})
+    return api.whisper.onStatus(setWhisper)
+  }, [])
+
+  // Raccourci Ctrl/Cmd+K → recherche globale.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setSearchOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     refreshCredits()
@@ -52,6 +80,16 @@ export default function App() {
     return off
   }, [refreshSessions])
 
+  // Arrêt automatique de l'enregistrement (ex. fenêtre capturée fermée) :
+  // le main a déjà lancé le pipeline → on bascule sur l'écran Traitement.
+  useEffect(() => {
+    const off = api.recording.onAutoStopped(({ id }) => {
+      setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
+      if (id) { setSelectedId(id); setScreen('processing') }
+    })
+    return off
+  }, [])
+
   // Chrono d'enregistrement (continue même hors de l'écran d'enregistrement)
   useEffect(() => {
     if (rec.state !== 'recording') return
@@ -59,15 +97,58 @@ export default function App() {
     return () => clearInterval(t)
   }, [rec.state])
 
+  // Contrôleur de capture native (mode fenêtre) ; null en mode écran (ffmpeg).
+  const winRecRef = useRef(null)
+
   const startRec = useCallback(async (opts) => {
     const id = await api.recording.start(opts)
+    if (opts.sourceType === 'window') {
+      try {
+        winRecRef.current = await startWindowCapture({
+          id,
+          sourceId: opts.sourceId,
+          micDeviceId: opts.micDeviceId,
+          // Fenêtre fermée pendant l'enregistrement → arrêt auto + traitement.
+          onEnded: async () => {
+            const ctrl = winRecRef.current
+            if (!ctrl) return
+            winRecRef.current = null
+            try { await ctrl.stop() } catch { /* noop */ }
+            setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
+            setSelectedId(id)
+            setScreen('processing')
+          },
+        })
+      } catch (e) {
+        await api.recording.windowAbort(id).catch(() => {})
+        throw e // remonte à Record.jsx (le bouton se réactive)
+      }
+    }
     setRec({ active: true, state: 'recording', sessionId: id, elapsed: 0 })
   }, [])
-  const pauseRec = useCallback(async () => { await api.recording.pause(); setRec((r) => ({ ...r, state: 'paused' })) }, [])
-  const resumeRec = useCallback(async () => { await api.recording.resume(); setRec((r) => ({ ...r, state: 'recording' })) }, [])
+
+  const pauseRec = useCallback(async () => {
+    if (winRecRef.current) winRecRef.current.pause()
+    else await api.recording.pause()
+    setRec((r) => ({ ...r, state: 'paused' }))
+  }, [])
+
+  const resumeRec = useCallback(async () => {
+    if (winRecRef.current) winRecRef.current.resume()
+    else await api.recording.resume()
+    setRec((r) => ({ ...r, state: 'recording' }))
+  }, [])
+
   const stopRec = useCallback(async () => {
-    const id = await api.recording.stop()
-    const sid = id || rec.sessionId
+    let sid = rec.sessionId
+    if (winRecRef.current) {
+      const ctrl = winRecRef.current
+      winRecRef.current = null
+      await ctrl.stop() // streame le reste + déclenche le pipeline (recording:window-stop)
+    } else {
+      const id = await api.recording.stop()
+      sid = id || rec.sessionId
+    }
     setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
     if (sid) { setSelectedId(sid); setScreen('processing') }
   }, [rec.sessionId])
@@ -94,6 +175,15 @@ export default function App() {
     else setScreen('processing')
   }, [])
 
+  // Résultat de recherche globale → ouvre la session concernée.
+  const openSearchResult = useCallback((e) => {
+    const s = sessions.find((x) => x.id === e.sessionId)
+    if (s) openSession(s)
+    else { setSelectedId(e.sessionId); setScreen('replay') }
+  }, [sessions, openSession])
+
+  const openStorage = useCallback(() => { api.system.openStorage() }, [])
+
   const backToList = useCallback(() => {
     refreshSessions()
     setScreen('sessions')
@@ -108,7 +198,8 @@ export default function App() {
     await api.sessions.remove(id)
     if (rec.sessionId === id) setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
     refreshSessions()
-  }, [rec.sessionId, refreshSessions])
+    refreshStorage()
+  }, [rec.sessionId, refreshSessions, refreshStorage])
 
   const importVideo = useCallback(async () => {
     setImporting(true)
@@ -125,9 +216,9 @@ export default function App() {
   return (
     <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
       <TitleBar />
-      <TopBar gPct={`${global.gPct}%`} gLabel={`${global.gPct}%`} credits={credits} />
+      <TopBar gPct={`${global.gPct}%`} gLabel={`${global.gPct}%`} credits={credits} whisper={whisper} onSearch={() => setSearchOpen(true)} go={go} version={version} onOpenStorage={openStorage} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <NavRail screen={screen} go={go} storageDir={settings?.storageDir} version={version} recording={rec.active} />
+        <NavRail screen={screen} go={go} storageDir={settings?.storageDir} version={version} recording={rec.active} storage={storage} onOpenStorage={openStorage} />
         <main
           className="qa-scroll"
           style={{ flex: 1, minWidth: 0, background: '#FAFBFB', overflow: replayMode ? 'hidden' : 'auto' }}
@@ -138,9 +229,11 @@ export default function App() {
           {screen === 'record' && <Record rec={rec} onStart={startRec} onPause={pauseRec} onResume={resumeRec} onStop={stopRec} onCancel={backToList} />}
           {screen === 'processing' && <Processing sessionId={selectedId} onBack={backToList} onOpenReplay={(id) => { setSelectedId(id); setScreen('replay') }} />}
           {screen === 'replay' && <Replay sessionId={selectedId} onBack={backToList} />}
-          {screen === 'settings' && <Settings onSaved={(s) => { setSettings(s); refreshCredits() }} />}
+          {screen === 'settings' && <Settings onSaved={(s) => { setSettings(s); refreshCredits(); refreshStorage() }} />}
         </main>
       </div>
+
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpen={openSearchResult} />
 
       {importing && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,25,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>

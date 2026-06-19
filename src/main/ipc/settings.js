@@ -1,9 +1,19 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { getSettings, setSettings } from '../settings-store.js'
+import { restartWhisperService } from '../whisper-service.js'
 
 export function registerSettingsIpc() {
   ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:set', (e, partial) => setSettings(partial || {}))
+  ipcMain.handle('settings:set', (e, partial) => {
+    const before = getSettings().computeMode
+    const next = setSettings(partial || {})
+    // Recharge le serveur whisper.cpp si le mode de calcul change réellement
+    // (pertinent pour un build GPU/CPU distinct ; sans effet sur un build CPU seul).
+    if (partial && 'computeMode' in partial && partial.computeMode !== before) {
+      restartWhisperService((ch, p) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send(ch, p) })
+    }
+    return next
+  })
   ipcMain.handle('settings:browse-folder', async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })
