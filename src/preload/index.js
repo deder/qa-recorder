@@ -29,6 +29,7 @@ const api = {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (partial) => ipcRenderer.invoke('settings:set', partial),
     browseFolder: () => ipcRenderer.invoke('settings:browse-folder'),
+    openrouterCredits: () => ipcRenderer.invoke('openrouter:credits'),
   },
   system: {
     version: () => ipcRenderer.invoke('system:version'),

@@ -17,9 +17,14 @@ export default function App() {
   const [sessions, setSessions] = useState([])
   const [settings, setSettings] = useState(null)
   const [version, setVersion] = useState('0.9.2')
+  const [credits, setCredits] = useState(null)
 
   const refreshSessions = useCallback(async () => {
     setSessions(await api.sessions.list())
+  }, [])
+
+  const refreshCredits = useCallback(() => {
+    api.settings.openrouterCredits().then(setCredits).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -27,6 +32,12 @@ export default function App() {
     api.settings.get().then(setSettings)
     api.system.version().then(setVersion)
   }, [refreshSessions])
+
+  useEffect(() => {
+    refreshCredits()
+    const t = setInterval(refreshCredits, 60000)
+    return () => clearInterval(t)
+  }, [refreshCredits])
 
   const global = useMemo(() => {
     const ready = sessions.filter((s) => s.status === 'PRETE' && s.stats)
@@ -63,7 +74,7 @@ export default function App() {
   return (
     <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
       <TitleBar />
-      <TopBar gPct={`${global.gPct}%`} gLabel={`${global.gPct}%`} />
+      <TopBar gPct={`${global.gPct}%`} gLabel={`${global.gPct}%`} credits={credits} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <NavRail screen={screen} go={go} storageDir={settings?.storageDir} version={version} />
         <main
@@ -76,7 +87,7 @@ export default function App() {
           {screen === 'record' && <Record onStop={goProcessing} onCancel={backToList} />}
           {screen === 'processing' && <Processing sessionId={selectedId} onBack={backToList} onOpenReplay={(id) => { setSelectedId(id); setScreen('replay') }} />}
           {screen === 'replay' && <Replay sessionId={selectedId} onBack={backToList} />}
-          {screen === 'settings' && <Settings onSaved={(s) => setSettings(s)} />}
+          {screen === 'settings' && <Settings onSaved={(s) => { setSettings(s); refreshCredits() }} />}
         </main>
       </div>
     </div>
