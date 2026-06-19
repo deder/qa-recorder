@@ -4,21 +4,25 @@ const ITEMS = [
   { key: 'settings', label: 'Réglages', glyph: '⚙' },
 ]
 
-export default function NavRail({ screen, go, storageDir, version }) {
+export default function NavRail({ screen, go, storageDir, version, recording }) {
   return (
     <aside style={{ width: 230, flex: 'none', background: '#fff', borderRight: '1px solid #E5E7EB', padding: '14px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
       {ITEMS.map((item) => {
         const active = screen === item.key || (item.key === 'sessions' && screen === 'replay')
+        const isRec = item.key === 'record' && recording
+        const label = isRec ? 'Session en cours' : item.label
         return (
           <div
             key={item.key}
             className={active ? '' : 'hov-grey'}
             onClick={() => go(item.key)}
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 14, background: active ? '#F3F4F6' : 'transparent', color: active ? '#000054' : '#595987', fontWeight: active ? 700 : 500 }}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 14, background: isRec ? 'rgba(230,76,53,0.10)' : active ? '#F3F4F6' : 'transparent', color: isRec ? '#E64C35' : active ? '#000054' : '#595987', fontWeight: active || isRec ? 700 : 500 }}
           >
-            <div style={{ position: 'absolute', left: 0, top: 11, width: 3, height: 20, borderRadius: 2, background: '#000054', opacity: active ? 1 : 0 }} />
-            <span style={{ fontSize: 16, width: 18, textAlign: 'center' }}>{item.glyph}</span>
-            <span>{item.label}</span>
+            <div style={{ position: 'absolute', left: 0, top: 11, width: 3, height: 20, borderRadius: 2, background: isRec ? '#E64C35' : '#000054', opacity: active || isRec ? 1 : 0 }} />
+            {isRec
+              ? <span style={{ width: 18, display: 'flex', justifyContent: 'center' }}><span style={{ width: 9, height: 9, borderRadius: 100, background: '#E64C35', animation: 'recblink 1.1s infinite' }} /></span>
+              : <span style={{ fontSize: 16, width: 18, textAlign: 'center' }}>{item.glyph}</span>}
+            <span>{label}</span>
           </div>
         )
       })}

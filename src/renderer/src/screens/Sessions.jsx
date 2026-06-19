@@ -53,6 +53,15 @@ function Poster({ s }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#A13525', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>⚠ Échec · {SHORT_STEPS[s.procStep || 0]}</div>
         </div>
       )}
+
+      {s.status === 'RECORDING' && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(13,15,25,0.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontSize: 12, fontWeight: 700 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 100, background: '#E64C35', animation: 'recblink 1.1s infinite' }} />Enregistrement en cours
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>Cliquer pour revenir à l’enregistrement</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -62,9 +71,16 @@ function StatusBadge({ status }) {
     PRETE: { t: 'Prête', c: '#317D51', bg: '#E8F5EC' },
     PROCESSING: { t: 'Traitement', c: '#0862A3', bg: '#E5F2FD' },
     ERREUR: { t: 'Erreur', c: '#A13525', bg: '#FBEAE7' },
+    RECORDING: { t: 'Enregistrement', c: '#A13525', bg: '#FBEAE7' },
   }
   const v = map[status] || map.PRETE
   return <span style={{ fontSize: 11, fontWeight: 600, color: v.c, background: v.bg, padding: '3px 8px', borderRadius: 100, whiteSpace: 'nowrap' }}>{v.t}</span>
+}
+
+function TrashButton({ onClick }) {
+  return (
+    <button onClick={onClick} title="Supprimer la session" className="hov-grey2" style={{ width: 28, height: 28, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#A13525', background: 'transparent', cursor: 'pointer', fontSize: 14, flex: 'none' }}>🗑</button>
+  )
 }
 
 function SeverityBars({ stats }) {
@@ -81,8 +97,12 @@ function SeverityBars({ stats }) {
   )
 }
 
-export default function Sessions({ sessions, view, setView, global, onOpen, onNew, onRelaunch }) {
+export default function Sessions({ sessions, view, setView, global, onOpen, onNew, onRelaunch, onDelete }) {
   const [q, setQ] = useState('')
+
+  const confirmDelete = (s) => {
+    if (window.confirm(`Supprimer la session « ${s.name} » ?\nCette action est irréversible.`)) onDelete(s.id)
+  }
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()
@@ -138,13 +158,15 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
           {filtered.map((s) => {
             const ready = s.status === 'PRETE'
             const err = s.status === 'ERREUR'
+            const clickable = ready || s.status === 'RECORDING'
             return (
-              <div key={s.id} className={ready ? 'card-hov' : ''} onClick={() => ready && onOpen(s)} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', cursor: ready ? 'pointer' : 'default' }}>
+              <div key={s.id} className={clickable ? 'card-hov' : ''} onClick={() => clickable && onOpen(s)} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, overflow: 'hidden', cursor: clickable ? 'pointer' : 'default' }}>
                 <Poster s={s} />
                 <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#000054', lineHeight: 1.3 }}>{s.name}</div>
                     <StatusBadge status={s.status} />
+                    <TrashButton onClick={(e) => { e.stopPropagation(); confirmDelete(s) }} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#595987' }}>
                     <span>{s.date}</span><span style={{ color: '#D4D7E0' }}>·</span>
@@ -174,14 +196,18 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
           </div>
           {filtered.map((s) => {
             const ready = s.status === 'PRETE'
+            const clickable = ready || s.status === 'RECORDING'
             return (
-              <div key={s.id} className={ready ? 'row-hov' : ''} onClick={() => ready && onOpen(s)} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.7fr 1.3fr 1fr', alignItems: 'center', padding: '13px 18px', borderBottom: '1px solid #F0F1F4', fontSize: 13, color: '#000054', cursor: ready ? 'pointer' : 'default' }}>
+              <div key={s.id} className={clickable ? 'row-hov' : ''} onClick={() => clickable && onOpen(s)} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.7fr 1.3fr 1fr', alignItems: 'center', padding: '13px 18px', borderBottom: '1px solid #F0F1F4', fontSize: 13, color: '#000054', cursor: clickable ? 'pointer' : 'default' }}>
                 <div style={{ fontWeight: 600, paddingRight: 12 }}>{s.name}</div>
                 <div style={{ color: '#595987' }}>{s.date}</div>
                 <div style={{ color: '#595987' }}>{ready ? fmt(s.durationSec || 0) : '—'}</div>
                 <div style={{ color: '#595987', fontWeight: 600 }}>{ready && s.stats ? s.stats.bugs : '—'}</div>
                 <div>{ready && s.stats ? <div style={{ width: 110 }}><SeverityBars stats={s.stats} /></div> : <span style={{ color: '#C0C3CE' }}>—</span>}</div>
-                <div><StatusBadge status={s.status} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <StatusBadge status={s.status} />
+                  <TrashButton onClick={(e) => { e.stopPropagation(); confirmDelete(s) }} />
+                </div>
               </div>
             )
           })}

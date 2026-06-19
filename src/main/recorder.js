@@ -77,3 +77,14 @@ export async function stopRecording() {
 export function isRecording() {
   return !!current
 }
+
+export function currentId() {
+  return current?.id || null
+}
+
+// Avorte l'enregistrement en cours sans finaliser (pour suppression).
+export async function abortRecording() {
+  if (!current) return
+  if (current.proc) await stopSegment(current.proc)
+  current = null
+}

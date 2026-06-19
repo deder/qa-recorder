@@ -12,6 +12,7 @@ const api = {
     saveBugs: (id, bugs) => ipcRenderer.invoke('sessions:save-bugs', id, bugs),
     create: (name) => ipcRenderer.invoke('sessions:create', name),
     process: (id, fromStart) => ipcRenderer.invoke('sessions:process', id, fromStart),
+    remove: (id) => ipcRenderer.invoke('sessions:delete', id),
     onProgress: (cb) => {
       const handler = (_e, payload) => cb(payload)
       ipcRenderer.on('sessions:progress', handler)

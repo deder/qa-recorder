@@ -4,11 +4,9 @@ import { clock } from '../lib/format.js'
 const api = window.api
 const N_BARS = 16
 
-// VU-mètre RÉEL : ouvre le micro sélectionné (Web Audio) et anime les barres
-// d'après le niveau d'entrée réel. Silence => barres plates. Inactif => pas de flux.
+// VU-mètre RÉEL branché sur le micro sélectionné (Web Audio). Silence => barres plates.
 function MicVuMeter({ deviceId, active }) {
   const barsRef = useRef([])
-
   useEffect(() => {
     if (!active) {
       barsRef.current.forEach((el) => el && (el.style.transform = 'scaleY(0.04)'))
@@ -18,14 +16,7 @@ function MicVuMeter({ deviceId, active }) {
     let raf, ctx, stream
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            deviceId: deviceId ? { exact: deviceId } : undefined,
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-          },
-        })
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
         ctx = new AudioContext()
         if (ctx.state === 'suspended') await ctx.resume()
         const src = ctx.createMediaStreamSource(stream)
@@ -37,7 +28,7 @@ function MicVuMeter({ deviceId, active }) {
         const loop = () => {
           if (stopped) return
           analyser.getByteFrequencyData(bins)
-          const usable = Math.floor(bins.length * 0.7) // ignore les très hautes fréquences
+          const usable = Math.floor(bins.length * 0.7)
           for (let i = 0; i < N_BARS; i++) {
             const a = Math.floor((i / N_BARS) * usable)
             const b = Math.max(a + 1, Math.floor(((i + 1) / N_BARS) * usable))
@@ -55,46 +46,36 @@ function MicVuMeter({ deviceId, active }) {
       }
     }
     start()
-    return () => {
-      stopped = true
-      if (raf) cancelAnimationFrame(raf)
-      if (stream) stream.getTracks().forEach((t) => t.stop())
-      if (ctx) ctx.close().catch(() => {})
-    }
+    return () => { stopped = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach((t) => t.stop()); if (ctx) ctx.close().catch(() => {}) }
   }, [deviceId, active])
 
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 32, padding: '0 2px' }}>
       {Array.from({ length: N_BARS }).map((_, i) => (
-        <div
-          key={i}
-          ref={(el) => (barsRef.current[i] = el)}
-          style={{ flex: 1, height: '100%', borderRadius: 2, background: 'linear-gradient(to top, #47B375, #47B375 60%, #ED6C02 80%, #E64C35)', transformOrigin: 'bottom', transform: 'scaleY(0.04)', transition: 'transform 60ms linear' }}
-        />
+        <div key={i} ref={(el) => (barsRef.current[i] = el)} style={{ flex: 1, height: '100%', borderRadius: 2, background: 'linear-gradient(to top, #47B375, #47B375 60%, #ED6C02 80%, #E64C35)', transformOrigin: 'bottom', transform: 'scaleY(0.04)', transition: 'transform 60ms linear' }} />
       ))}
     </div>
   )
 }
 
-export default function Record({ onStop, onCancel }) {
+export default function Record({ rec, onStart, onPause, onResume, onStop, onCancel }) {
   const [sources, setSources] = useState([])
   const [sourceType, setSourceType] = useState('screen')
-  const [mics, setMics] = useState([]) // [{ deviceId, label }]
+  const [mics, setMics] = useState([])
   const [micId, setMicId] = useState('')
   const [dshowNames, setDshowNames] = useState([])
   const [name, setName] = useState('')
-  const [recState, setRecState] = useState('idle')
-  const [recT, setRecT] = useState(0)
   const [busy, setBusy] = useState(false)
-  const timerRef = useRef(null)
+
+  const idle = !rec.active
+  const recording = rec.state === 'recording'
+  const paused = rec.state === 'paused'
+  const recT = rec.elapsed
 
   useEffect(() => {
     let cancelled = false
     async function initMics() {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true })
-        s.getTracks().forEach((t) => t.stop()) // débloque les labels puis libère
-      } catch { /* permission refusée */ }
+      try { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach((t) => t.stop()) } catch { /* refusé */ }
       const devs = await navigator.mediaDevices.enumerateDevices().catch(() => [])
       const ins = devs.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'communications')
       if (cancelled) return
@@ -111,29 +92,18 @@ export default function Record({ onStop, onCancel }) {
     return () => { cancelled = true }
   }, [])
 
-  useEffect(() => {
-    if (recState === 'recording') timerRef.current = setInterval(() => setRecT((t) => t + 1), 1000)
-    else clearInterval(timerRef.current)
-    return () => clearInterval(timerRef.current)
-  }, [recState])
-
   const screenSources = sources.filter((s) => s.type === 'screen')
   const windowSources = sources.filter((s) => s.type === 'window')
   const preview = (sourceType === 'screen' ? screenSources : windowSources)[0] || screenSources[0]
 
   const selectedMic = mics.find((m) => m.deviceId === micId)
   const micLabel = selectedMic?.label || ''
-  // Mappe le label Web Audio vers le nom dshow attendu par ffmpeg
   const cleanLabel = micLabel.replace(/^Par défaut\s*-\s*/i, '').replace(/^Default\s*-\s*/i, '').trim()
   const dshowName = dshowNames.find((n) => n === cleanLabel || cleanLabel.includes(n) || n.includes(cleanLabel)) || dshowNames[0] || cleanLabel || null
 
-  const recording = recState === 'recording'
-  const paused = recState === 'paused'
-  const idle = recState === 'idle'
-
   const start = async () => {
     setBusy(true)
-    await api.recording.start({
+    await onStart({
       name,
       sourceType,
       sourceTitle: sourceType === 'window' ? preview?.name : null,
@@ -141,26 +111,18 @@ export default function Record({ onStop, onCancel }) {
       micName: dshowName,
       fps: '30',
     })
-    setRecState('recording')
     setBusy(false)
   }
-  const pause = async () => { await api.recording.pause(); setRecState('paused') }
-  const resume = async () => { await api.recording.resume(); setRecState('recording') }
-  const stop = async () => {
-    setBusy(true)
-    const id = await api.recording.stop()
-    setRecState('idle'); setRecT(0); setBusy(false)
-    if (id) onStop(id)
-  }
+  const stop = async () => { setBusy(true); await onStop(); setBusy(false) }
 
   const card = { background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }
-  const radio = (active) => ({ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: active ? '2px solid #0C8CE9' : '1px solid #E0E0E0', borderRadius: 8, background: active ? '#F4FAFE' : '#fff', fontSize: 13, fontWeight: active ? 600 : 500, color: active ? '#0862A3' : '#595987', cursor: 'pointer' })
+  const radio = (on) => ({ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: on ? '2px solid #0C8CE9' : '1px solid #E0E0E0', borderRadius: 8, background: on ? '#F4FAFE' : '#fff', fontSize: 13, fontWeight: on ? 600 : 500, color: on ? '#0862A3' : '#595987', cursor: idle ? 'pointer' : 'default' })
 
   return (
     <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
-        <div style={{ fontSize: 13, color: '#595987' }}>Sessions / Nouvelle</div>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#000054', margin: '4px 0 0' }}>Nouvelle session</h1>
+        <div style={{ fontSize: 13, color: '#595987' }}>Sessions / {idle ? 'Nouvelle' : 'En cours'}</div>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#000054', margin: '4px 0 0' }}>{idle ? 'Nouvelle session' : 'Enregistrement en cours'}</h1>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20, alignItems: 'start' }}>
@@ -236,14 +198,14 @@ export default function Record({ onStop, onCancel }) {
             )}
             {recording && (
               <>
-                <button className="hov-grey" onClick={pause} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 8, background: '#fff', border: '1px solid #E0E0E0', color: '#000054', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>❚❚ Pause</button>
+                <button className="hov-grey" onClick={onPause} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 8, background: '#fff', border: '1px solid #E0E0E0', color: '#000054', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>❚❚ Pause</button>
                 <button className="hov-navy" disabled={busy} onClick={stop} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 8, background: '#000054', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>■ Arrêter</button>
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: '#E64C35' }}><span style={{ width: 9, height: 9, borderRadius: 100, background: '#E64C35', animation: 'recblink 1.1s infinite' }} />{clock(recT)}</div>
               </>
             )}
             {paused && (
               <>
-                <button className="hov-blue" onClick={resume} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 22px', borderRadius: 8, background: '#0C8CE9', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>▶ Reprendre</button>
+                <button className="hov-blue" onClick={onResume} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 22px', borderRadius: 8, background: '#0C8CE9', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>▶ Reprendre</button>
                 <button className="hov-navy" disabled={busy} onClick={stop} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 20px', borderRadius: 8, background: '#000054', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>■ Arrêter</button>
                 <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: '#ED6C02' }}>En pause · {clock(recT)}</div>
               </>

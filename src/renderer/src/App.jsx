@@ -18,6 +18,8 @@ export default function App() {
   const [settings, setSettings] = useState(null)
   const [version, setVersion] = useState('0.9.2')
   const [credits, setCredits] = useState(null)
+  // État d'enregistrement GLOBAL (persiste quand on change d'écran)
+  const [rec, setRec] = useState({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
 
   const refreshSessions = useCallback(async () => {
     setSessions(await api.sessions.list())
@@ -39,6 +41,26 @@ export default function App() {
     return () => clearInterval(t)
   }, [refreshCredits])
 
+  // Chrono d'enregistrement (continue même hors de l'écran d'enregistrement)
+  useEffect(() => {
+    if (rec.state !== 'recording') return
+    const t = setInterval(() => setRec((r) => ({ ...r, elapsed: r.elapsed + 1 })), 1000)
+    return () => clearInterval(t)
+  }, [rec.state])
+
+  const startRec = useCallback(async (opts) => {
+    const id = await api.recording.start(opts)
+    setRec({ active: true, state: 'recording', sessionId: id, elapsed: 0 })
+  }, [])
+  const pauseRec = useCallback(async () => { await api.recording.pause(); setRec((r) => ({ ...r, state: 'paused' })) }, [])
+  const resumeRec = useCallback(async () => { await api.recording.resume(); setRec((r) => ({ ...r, state: 'recording' })) }, [])
+  const stopRec = useCallback(async () => {
+    const id = await api.recording.stop()
+    const sid = id || rec.sessionId
+    setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
+    if (sid) { setSelectedId(sid); setScreen('processing') }
+  }, [rec.sessionId])
+
   const global = useMemo(() => {
     const ready = sessions.filter((s) => s.status === 'PRETE' && s.stats)
     const totalBugs = ready.reduce((a, s) => a + s.stats.bugs, 0)
@@ -56,7 +78,9 @@ export default function App() {
 
   const openSession = useCallback((s) => {
     setSelectedId(s.id)
-    setScreen(s.status === 'PRETE' ? 'replay' : 'processing')
+    if (s.status === 'PRETE') setScreen('replay')
+    else if (s.status === 'RECORDING') setScreen('record')
+    else setScreen('processing')
   }, [])
 
   const backToList = useCallback(() => {
@@ -69,6 +93,12 @@ export default function App() {
     setScreen('processing')
   }, [])
 
+  const deleteSession = useCallback(async (id) => {
+    await api.sessions.remove(id)
+    if (rec.sessionId === id) setRec({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
+    refreshSessions()
+  }, [rec.sessionId, refreshSessions])
+
   const replayMode = screen === 'replay'
 
   return (
@@ -76,15 +106,15 @@ export default function App() {
       <TitleBar />
       <TopBar gPct={`${global.gPct}%`} gLabel={`${global.gPct}%`} credits={credits} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <NavRail screen={screen} go={go} storageDir={settings?.storageDir} version={version} />
+        <NavRail screen={screen} go={go} storageDir={settings?.storageDir} version={version} recording={rec.active} />
         <main
           className="qa-scroll"
           style={{ flex: 1, minWidth: 0, background: '#FAFBFB', overflow: replayMode ? 'hidden' : 'auto' }}
         >
           {screen === 'sessions' && (
-            <Sessions sessions={sessions} view={view} setView={setView} global={global} onOpen={openSession} onNew={() => go('record')} onRelaunch={goProcessing} />
+            <Sessions sessions={sessions} view={view} setView={setView} global={global} onOpen={openSession} onNew={() => go('record')} onRelaunch={goProcessing} onDelete={deleteSession} />
           )}
-          {screen === 'record' && <Record onStop={goProcessing} onCancel={backToList} />}
+          {screen === 'record' && <Record rec={rec} onStart={startRec} onPause={pauseRec} onResume={resumeRec} onStop={stopRec} onCancel={backToList} />}
           {screen === 'processing' && <Processing sessionId={selectedId} onBack={backToList} onOpenReplay={(id) => { setSelectedId(id); setScreen('replay') }} />}
           {screen === 'replay' && <Replay sessionId={selectedId} onBack={backToList} />}
           {screen === 'settings' && <Settings onSaved={(s) => { setSettings(s); refreshCredits() }} />}
