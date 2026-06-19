@@ -6,12 +6,25 @@ directories:
 files:
   - out/**
   - package.json
+# Binaires & modèle embarqués (peuplés par `npm run fetch-bins`, hors git).
+# Copiés dans <app>/resources/bin et <app>/resources/models — résolus par
+# src/main/ffmpeg.js et src/main/transcribe.js via process.resourcesPath.
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter: ['**/*']
+  - from: resources/models
+    to: models
+    filter: ['**/*']
+  - from: resources/py
+    to: py
+    filter: ['**/*']
 win:
   target:
     - nsis
+  artifactName: ${productName}-${version}-setup.${ext}
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-# Note (jalon packaging) : ajouter ici extraResources pour embarquer
-# ffmpeg.exe, whisper-cli.exe (CPU + GPU) et le modèle GGUF.
+  shortcutName: QA Session Recorder

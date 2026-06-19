@@ -8,8 +8,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "pack": "electron-vite build && electron-builder --dir",
-    "dist": "electron-vite build && electron-builder"
+    "fetch-bins": "node tools/fetch-binaries.mjs",
+    "pack": "npm run fetch-bins && electron-vite build && electron-builder --dir",
+    "dist": "npm run fetch-bins && electron-vite build && electron-builder"
   },
   "dependencies": {
     "react": "^18.3.1",

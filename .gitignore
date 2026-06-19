@@ -5,3 +5,5 @@ dist/
 .DS_Store
 # Sessions locales (vidéos volumineuses) — ne pas versionner
 sessions/
+# Binaires/modèles embarqués (peuplés par `npm run fetch-bins`) — trop volumineux pour git
+resources/
