@@ -20,6 +20,21 @@ function listSegments(id) {
   }
 }
 
+// Une étape est-elle déjà aboutie (sa sortie existe) ? → permet de reprendre
+// le traitement à la première étape non terminée plutôt que tout recalculer.
+function isStepComplete(id, step) {
+  const d = sessionDir(id)
+  const ex = (f) => fs.existsSync(join(d, f))
+  const nonEmpty = (f) => { try { return fs.statSync(join(d, f)).size > 0 } catch { return false } }
+  switch (step) {
+    case 0: return ex('session.mkv') || ex('session.mp4')
+    case 1: return ex('session.mp4')
+    case 2: return nonEmpty('transcript.txt')
+    case 3: try { return (JSON.parse(fs.readFileSync(join(d, 'bugs.json'), 'utf-8')).bugs || []).length > 0 } catch { return false }
+    default: return false
+  }
+}
+
 async function finalizeStep(id, fromStart) {
   const dir = sessionDir(id)
   const mkv = join(dir, 'session.mkv')
@@ -85,7 +100,16 @@ export async function runPipeline(id, fromStart, broadcast) {
   const emit = (patch) => broadcast?.('sessions:progress', { id, ...patch })
 
   try {
-    for (let step = 0; step < STEP_FNS.length; step++) {
+    // Reprise : on saute les étapes déjà terminées (sauf si fromStart force tout).
+    let start = 0
+    if (!fromStart) { while (start < STEP_FNS.length && isStepComplete(id, start)) start++ }
+    if (start > 0) {
+      const m0 = readMeta(id)
+      writeMeta(id, { ...m0, status: STATUS.PROCESSING, procStep: start, procPct: 0, error: null })
+      emit({ status: STATUS.PROCESSING, step: start, pct: 0 })
+    }
+
+    for (let step = start; step < STEP_FNS.length; step++) {
       const m = readMeta(id)
       writeMeta(id, { ...m, status: STATUS.PROCESSING, procStep: step, procPct: 0, error: null })
       emit({ status: STATUS.PROCESSING, step, pct: 5 })

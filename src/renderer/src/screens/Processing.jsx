@@ -37,10 +37,10 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
 
   const relaunch = () => {
     setStatus('PROCESSING')
-    setStep(0)
     setPct(0)
     setError('')
-    api.sessions.process(sessionId, true)
+    // fromStart=false : reprend à la première étape non terminée (ne recalcule pas les étapes réussies)
+    api.sessions.process(sessionId, false)
   }
 
   const stepState = (i) => {
