@@ -1,10 +1,9 @@
 import { join } from 'node:path'
 import fs from 'node:fs'
-import { sessionDir, readMeta, writeMeta, loadSession, saveBugs } from './sessions/store.js'
+import { sessionDir, readMeta, writeMeta } from './sessions/store.js'
 import { findDemoVideo } from './sessions/seed.js'
 import { runFfmpeg, probeDuration, hasAudioStream } from './ffmpeg.js'
 import { STATUS, PROC_STEPS } from './sessions/steps.js'
-import seedBugs from './sessions/seed-bugs.js'
 
 // J3 remplacera transcribeStep + analyzeStep par whisper.cpp + OpenRouter.
 import { transcribe as realTranscribe } from './transcribe.js'
@@ -96,10 +95,6 @@ export async function runPipeline(id, fromStart, broadcast) {
 
       emit({ status: STATUS.PROCESSING, step, pct: 100 })
     }
-
-    // Garantit une relecture exploitable (démo) si l'analyse n'a rien produit.
-    const cur = loadSession(id)
-    if (!cur || !cur.bugs.length) saveBugs(id, seedBugs)
 
     const m = readMeta(id)
     writeMeta(id, { ...m, status: STATUS.PRETE, procStep: PROC_STEPS.length, procPct: 100, error: null })

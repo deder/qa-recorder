@@ -8,8 +8,8 @@ function defaults() {
   return {
     storageDir: join(app.getPath('userData'), 'sessions'),
     openrouterKey: '',
-    analysisModel: 'Analyse — qualité élevée',
-    transcriptionModel: 'Transcription — français (local)',
+    analysisModel: 'anthropic/claude-3.5-sonnet',
+    transcriptionModel: 'large-v3',
     resolution: '1920 × 1080',
     fps: '30 fps',
     computeMode: 'auto', // auto | gpu | cpu

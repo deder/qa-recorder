@@ -52,19 +52,20 @@ export default function Settings({ onSaved }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={label}>Modèle d’analyse</div>
+            <div style={label}>Modèle d’analyse (OpenRouter)</div>
             <select value={s.analysisModel} onChange={set('analysisModel')} style={field}>
-              <option>Analyse — qualité élevée</option>
-              <option>Analyse — équilibré</option>
-              <option>Analyse — économique</option>
+              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet — qualité élevée</option>
+              <option value="openai/gpt-4o">GPT-4o — équilibré</option>
+              <option value="google/gemini-flash-1.5">Gemini Flash 1.5 — économique</option>
+              <option value="deepseek/deepseek-chat">DeepSeek Chat — très économique</option>
             </select>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={label}>Modèle de transcription</div>
+            <div style={label}>Modèle de transcription (local)</div>
             <select value={s.transcriptionModel} onChange={set('transcriptionModel')} style={field}>
-              <option>Transcription — français (local)</option>
-              <option>Transcription — large-v3</option>
-              <option>Transcription — large-v3-turbo (quantisé)</option>
+              <option value="large-v3">large-v3 (qualité, GPU)</option>
+              <option value="large-v3-turbo">large-v3-turbo (rapide, CPU)</option>
+              <option value="medium">medium</option>
             </select>
           </div>
         </div>
