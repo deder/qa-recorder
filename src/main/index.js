@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, net } from 'electron'
+import { app, BrowserWindow, protocol, net, session } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { getSessionsRoot } from './sessions/store.js'
@@ -48,6 +48,10 @@ app.whenReady().then(() => {
     const filePath = join(getSessionsRoot(), rel)
     return net.fetch(pathToFileURL(filePath).toString())
   })
+
+  // Autorise micro / capture pour le VU-mètre et l'enregistrement (outil interne).
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(true))
+  session.defaultSession.setPermissionCheckHandler(() => true)
 
   try {
     seedIfEmpty()
