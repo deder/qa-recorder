@@ -1,6 +1,9 @@
-import { ipcMain, BrowserWindow } from 'electron'
-import { listSessions, loadSession, saveBugs, deleteSession } from '../sessions/store.js'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { join, basename } from 'node:path'
+import fs from 'node:fs'
+import { listSessions, loadSession, saveBugs, deleteSession, writeMeta, sessionDir } from '../sessions/store.js'
 import { runPipeline } from '../pipeline.js'
+import { STATUS } from '../sessions/steps.js'
 import { currentId, abortRecording } from '../recorder.js'
 
 function broadcast(channel, payload) {
@@ -24,5 +27,44 @@ export function registerSessionsIpc() {
       try { await abortRecording() } catch (err) { console.error(err) }
     }
     return deleteSession(id)
+  })
+
+  // Importe un fichier MKV/MP4 comme nouvelle session et lance son traitement.
+  ipcMain.handle('sessions:import', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Importer une vidéo de session',
+      properties: ['openFile'],
+      filters: [{ name: 'Vidéo (MKV, MP4)', extensions: ['mkv', 'mp4'] }],
+    })
+    if (res.canceled || !res.filePaths.length) return null
+    const src = res.filePaths[0]
+    const ext = src.toLowerCase().endsWith('.mkv') ? 'mkv' : 'mp4'
+    const id = 'session-' + Date.now()
+    const now = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    const date = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`
+    const base = basename(src).replace(/\.(mkv|mp4)$/i, '')
+    try {
+      fs.mkdirSync(sessionDir(id), { recursive: true })
+      fs.copyFileSync(src, join(sessionDir(id), `session.${ext}`))
+    } catch (err) {
+      console.error('import copy failed', err)
+      return null
+    }
+    writeMeta(id, {
+      id,
+      name: `Import — ${base}`,
+      createdAt: now.toISOString(),
+      date,
+      durationSec: 0,
+      status: STATUS.PROCESSING,
+      procStep: 0,
+      procPct: 0,
+      hue: '#8218E2',
+      imported: true,
+    })
+    runPipeline(id, false, broadcast)
+    return id
   })
 }

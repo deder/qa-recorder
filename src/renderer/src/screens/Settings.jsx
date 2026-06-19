@@ -80,23 +80,9 @@ export default function Settings({ onSaved }) {
             <button className="hov-grey" onClick={browse} style={{ height: 44, padding: '0 16px', border: '1px solid #E0E0E0', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#000054', background: '#fff', cursor: 'pointer' }}>Parcourir…</button>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={label}>Résolution</div>
-            <select value={s.resolution} onChange={set('resolution')} style={field}>
-              <option>1920 × 1080</option>
-              <option>2560 × 1440</option>
-              <option>1280 × 720</option>
-            </select>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={label}>Images par seconde</div>
-            <select value={s.fps} onChange={set('fps')} style={field}>
-              <option>30 fps</option>
-              <option>60 fps</option>
-              <option>25 fps</option>
-            </select>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 8, background: '#F4FAFE', border: '1px solid #D7EAFB' }}>
+          <span style={{ color: '#0C8CE9', fontSize: 16 }}>ⓘ</span>
+          <div style={{ fontSize: 13, color: '#0862A3' }}>La <b>résolution</b> et les <b>images par seconde</b> sont déterminées automatiquement d’après l’écran capturé — rien à régler.</div>
         </div>
       </div>
 

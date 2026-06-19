@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { fmt } from '../lib/format.js'
+import ConfirmDialog from '../components/ConfirmDialog.jsx'
 
 const SHORT_STEPS = ['Finalisation', 'Conversion', 'Transcription', 'Analyse']
 
@@ -97,12 +98,12 @@ function SeverityBars({ stats }) {
   )
 }
 
-export default function Sessions({ sessions, view, setView, global, onOpen, onNew, onRelaunch, onDelete }) {
+export default function Sessions({ sessions, view, setView, global, onOpen, onNew, onRelaunch, onDelete, onImport }) {
   const [q, setQ] = useState('')
+  const [toDelete, setToDelete] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  const confirmDelete = (s) => {
-    if (window.confirm(`Supprimer la session « ${s.name} » ?\nCette action est irréversible.`)) onDelete(s.id)
-  }
+  const askDelete = (s) => setToDelete(s)
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()
@@ -134,6 +135,19 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
           <button className="hov-navy" onClick={onNew} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 18px', borderRadius: 8, background: '#000054', color: '#fff', fontSize: 14, fontWeight: 600, letterSpacing: '0.4px', cursor: 'pointer' }}>
             <span style={{ fontSize: 17, lineHeight: 1 }}>＋</span> Nouvelle session
           </button>
+          <div style={{ position: 'relative' }}>
+            <button className="hov-grey" onClick={() => setMenuOpen((o) => !o)} title="Plus d’options" style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #E5E7EB', background: '#fff', color: '#595987', fontSize: 20, fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}>⋯</button>
+            {menuOpen && (
+              <>
+                <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+                <div style={{ position: 'absolute', right: 0, top: 46, zIndex: 51, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,84,0.16)', padding: 6, minWidth: 260 }}>
+                  <button className="hov-grey" onClick={() => { setMenuOpen(false); onImport?.() }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, background: 'transparent', color: '#000054', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    <span style={{ fontSize: 15 }}>⬆</span> Importer une vidéo (MKV / MP4)…
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -166,7 +180,7 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#000054', lineHeight: 1.3 }}>{s.name}</div>
                     <StatusBadge status={s.status} />
-                    <TrashButton onClick={(e) => { e.stopPropagation(); confirmDelete(s) }} />
+                    <TrashButton onClick={(e) => { e.stopPropagation(); askDelete(s) }} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#595987' }}>
                     <span>{s.date}</span><span style={{ color: '#D4D7E0' }}>·</span>
@@ -206,13 +220,23 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
                 <div>{ready && s.stats ? <div style={{ width: 110 }}><SeverityBars stats={s.stats} /></div> : <span style={{ color: '#C0C3CE' }}>—</span>}</div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <StatusBadge status={s.status} />
-                  <TrashButton onClick={(e) => { e.stopPropagation(); confirmDelete(s) }} />
+                  <TrashButton onClick={(e) => { e.stopPropagation(); askDelete(s) }} />
                 </div>
               </div>
             )
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!toDelete}
+        danger
+        title="Supprimer la session"
+        message={toDelete ? `« ${toDelete.name} »\nCette action est irréversible.` : ''}
+        confirmLabel="Supprimer"
+        onConfirm={() => { onDelete(toDelete.id); setToDelete(null) }}
+        onCancel={() => setToDelete(null)}
+      />
     </div>
   )
 }

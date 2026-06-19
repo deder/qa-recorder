@@ -5,8 +5,12 @@ const api = window.api
 const N_BARS = 16
 
 // VU-mètre RÉEL branché sur le micro sélectionné (Web Audio). Silence => barres plates.
-function MicVuMeter({ deviceId, active }) {
+// onStatus({ available, hasSound }) : dispo du micro + détection d'un son réel (latché).
+const SOUND_THRESHOLD = 14 // seuil (0-255) au-dessus duquel on considère qu'il y a du son
+function MicVuMeter({ deviceId, active, onStatus }) {
   const barsRef = useRef([])
+  const cbRef = useRef(onStatus)
+  cbRef.current = onStatus
   useEffect(() => {
     if (!active) {
       barsRef.current.forEach((el) => el && (el.style.transform = 'scaleY(0.04)'))
@@ -14,9 +18,15 @@ function MicVuMeter({ deviceId, active }) {
     }
     let stopped = false
     let raf, ctx, stream
+    let available = false
+    let hasSound = false
+    const emit = () => cbRef.current?.({ available, hasSound })
+    emit() // reset à false au (re)montage / changement de micro
     async function start() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+        available = true
+        emit()
         ctx = new AudioContext()
         if (ctx.state === 'suspended') await ctx.resume()
         const src = ctx.createMediaStreamSource(stream)
@@ -29,19 +39,25 @@ function MicVuMeter({ deviceId, active }) {
           if (stopped) return
           analyser.getByteFrequencyData(bins)
           const usable = Math.floor(bins.length * 0.7)
+          let peak = 0
           for (let i = 0; i < N_BARS; i++) {
             const a = Math.floor((i / N_BARS) * usable)
             const b = Math.max(a + 1, Math.floor(((i + 1) / N_BARS) * usable))
             let m = 0
             for (let j = a; j < b; j++) m = Math.max(m, bins[j])
+            if (m > peak) peak = m
             const h = Math.max(0.04, Math.min(1, (m / 255) * 1.25))
             const el = barsRef.current[i]
             if (el) el.style.transform = `scaleY(${h})`
           }
+          if (!hasSound && peak >= SOUND_THRESHOLD) { hasSound = true; emit() }
           raf = requestAnimationFrame(loop)
         }
         loop()
       } catch (e) {
+        available = false
+        hasSound = false
+        emit()
         console.warn('VU micro indisponible:', e?.message || e)
       }
     }
@@ -66,6 +82,8 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
   const [dshowNames, setDshowNames] = useState([])
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [micStatus, setMicStatus] = useState({ available: false, hasSound: false })
+  const [display, setDisplay] = useState({ width: 0, height: 0, fps: 30 })
 
   const idle = !rec.active
   const recording = rec.state === 'recording'
@@ -85,6 +103,7 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
     }
     initMics()
     api.system.sources().then(setSources)
+    api.system.display().then(setDisplay)
     api.recording.audioDevices().then(setDshowNames)
     const now = new Date()
     const pad = (n) => String(n).padStart(2, '0')
@@ -101,7 +120,17 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
   const cleanLabel = micLabel.replace(/^Par défaut\s*-\s*/i, '').replace(/^Default\s*-\s*/i, '').trim()
   const dshowName = dshowNames.find((n) => n === cleanLabel || cleanLabel.includes(n) || n.includes(cleanLabel)) || dshowNames[0] || cleanLabel || null
 
+  const micReady = micStatus.available
+  const soundOk = micStatus.hasSound
+  const canRecord = !!micId && micReady && soundOk
+  const blockMsg = !micId || !micReady
+    ? 'Micro indisponible — branche un micro et autorise l’accès au micro.'
+    : !soundOk
+      ? 'Aucun son détecté — parle dans le micro pour vérifier avant d’enregistrer.'
+      : null
+
   const start = async () => {
+    if (!canRecord) return
     setBusy(true)
     await onStart({
       name,
@@ -109,7 +138,7 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
       sourceTitle: sourceType === 'window' ? preview?.name : null,
       sourceLabel: preview?.name || (sourceType === 'screen' ? 'Écran entier' : 'Fenêtre'),
       micName: dshowName,
-      fps: '30',
+      fps: String(display.fps || 30),
     })
     setBusy(false)
   }
@@ -151,7 +180,12 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
             </select>
             <div>
               <div style={{ fontSize: 12, color: '#595987', marginBottom: 6 }}>Niveau d’entrée {idle ? '' : '(figé pendant l’enregistrement)'}</div>
-              <MicVuMeter deviceId={micId} active={idle} />
+              <MicVuMeter deviceId={micId} active={idle} onStatus={setMicStatus} />
+              {idle && (
+                <div style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color: canRecord ? '#317D51' : '#A13525' }}>
+                  {canRecord ? '✓ Micro OK, son détecté' : !micReady ? '○ Micro indisponible' : '○ En attente d’un son…'}
+                </div>
+              )}
             </div>
           </div>
 
@@ -189,10 +223,18 @@ export default function Record({ rec, onStart, onPause, onResume, onStop, onCanc
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 18px' }}>
             {idle && (
               <>
-                <button className="hov-red" disabled={busy} onClick={start} style={{ display: 'flex', alignItems: 'center', gap: 9, height: 44, padding: '0 22px', borderRadius: 8, background: '#E64C35', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>
+                <button
+                  className={canRecord ? 'hov-red' : ''}
+                  disabled={busy || !canRecord}
+                  onClick={start}
+                  title={blockMsg || ''}
+                  style={{ display: 'flex', alignItems: 'center', gap: 9, height: 44, padding: '0 22px', borderRadius: 8, background: canRecord ? '#E64C35' : '#F0C9C2', color: '#fff', fontSize: 14, fontWeight: 700, cursor: canRecord ? 'pointer' : 'not-allowed', opacity: busy ? 0.6 : 1 }}
+                >
                   <span style={{ width: 11, height: 11, borderRadius: 100, background: '#fff' }} />Enregistrer
                 </button>
-                <div style={{ fontSize: 13, color: '#595987' }}>Prêt · {preview?.name || 'écran'}{dshowName ? ` + ${cleanLabel.slice(0, 26)}${cleanLabel.length > 26 ? '…' : ''}` : ' (sans micro)'}</div>
+                <div style={{ fontSize: 13, color: blockMsg ? '#A13525' : '#595987', maxWidth: 360 }}>
+                  {blockMsg || `Prêt · ${preview?.name || 'écran'}${display.width ? ` · ${display.width}×${display.height} · ${display.fps} fps` : ''}`}
+                </div>
                 <button className="hov-grey" onClick={onCancel} style={{ marginLeft: 'auto', height: 40, padding: '0 16px', borderRadius: 8, border: '1px solid #E0E0E0', background: '#fff', color: '#595987', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Annuler</button>
               </>
             )}

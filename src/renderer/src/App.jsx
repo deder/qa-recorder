@@ -99,6 +99,11 @@ export default function App() {
     refreshSessions()
   }, [rec.sessionId, refreshSessions])
 
+  const importVideo = useCallback(async () => {
+    const id = await api.sessions.import()
+    if (id) { setSelectedId(id); setScreen('processing') }
+  }, [])
+
   const replayMode = screen === 'replay'
 
   return (
@@ -112,7 +117,7 @@ export default function App() {
           style={{ flex: 1, minWidth: 0, background: '#FAFBFB', overflow: replayMode ? 'hidden' : 'auto' }}
         >
           {screen === 'sessions' && (
-            <Sessions sessions={sessions} view={view} setView={setView} global={global} onOpen={openSession} onNew={() => go('record')} onRelaunch={goProcessing} onDelete={deleteSession} />
+            <Sessions sessions={sessions} view={view} setView={setView} global={global} onOpen={openSession} onNew={() => go('record')} onRelaunch={goProcessing} onDelete={deleteSession} onImport={importVideo} />
           )}
           {screen === 'record' && <Record rec={rec} onStart={startRec} onPause={pauseRec} onResume={resumeRec} onStop={stopRec} onCancel={backToList} />}
           {screen === 'processing' && <Processing sessionId={selectedId} onBack={backToList} onOpenReplay={(id) => { setSelectedId(id); setScreen('replay') }} />}

@@ -13,6 +13,7 @@ const api = {
     create: (name) => ipcRenderer.invoke('sessions:create', name),
     process: (id, fromStart) => ipcRenderer.invoke('sessions:process', id, fromStart),
     remove: (id) => ipcRenderer.invoke('sessions:delete', id),
+    import: () => ipcRenderer.invoke('sessions:import'),
     onProgress: (cb) => {
       const handler = (_e, payload) => cb(payload)
       ipcRenderer.on('sessions:progress', handler)
@@ -35,6 +36,7 @@ const api = {
   system: {
     version: () => ipcRenderer.invoke('system:version'),
     sources: () => ipcRenderer.invoke('system:sources'),
+    display: () => ipcRenderer.invoke('system:display'),
   },
   // URL pour le <video> de relecture
   mediaUrl: (sessionId) => `media://local/${sessionId}/session.mp4`,
