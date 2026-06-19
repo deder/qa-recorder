@@ -52,6 +52,26 @@ async function download(url, dest) {
   console.log(`✓ ${dest} (${Math.round(fs.statSync(dest).size / 1e6)} Mo)`)
 }
 
+// Aplatit les .exe/.dll trouvés (récursif) vers resources/bin.
+function flattenBinaries(fromDir) {
+  for (const e of fs.readdirSync(fromDir, { withFileTypes: true })) {
+    const p = join(fromDir, e.name)
+    if (e.isDirectory()) flattenBinaries(p)
+    else if (/\.(exe|dll)$/i.test(e.name)) fs.copyFileSync(p, join(BIN, e.name))
+  }
+}
+
+async function embedWhisperFromZip(url) {
+  const tmp = join(BIN, '_whisper_tmp')
+  fs.mkdirSync(tmp, { recursive: true })
+  const zip = join(tmp, 'whisper.zip')
+  await download(url, zip)
+  const r = spawnSync('tar', ['-xf', zip, '-C', tmp], { encoding: 'utf-8' })
+  if (r.status !== 0) throw new Error('extraction échouée (tar) : ' + (r.stderr || ''))
+  flattenBinaries(tmp)
+  fs.rmSync(tmp, { recursive: true, force: true })
+}
+
 async function main() {
   copyExe('ffmpeg')
   copyExe('ffprobe')
@@ -66,11 +86,24 @@ async function main() {
     console.log('· modèle Whisper non téléchargé (ajoute --model large-v3-turbo pour l’embarquer)')
   }
 
-  const whisperZip = argVal('--whisper')
-  if (whisperZip) await download(whisperZip, join(BIN, 'whisper-bin.zip')).catch((e) => console.warn('! whisper.cpp:', e.message))
-  else console.log('· binaire whisper.cpp non téléchargé (ajoute --whisper <url-zip> ou place whisper-cli.exe dans resources/bin)')
-
-  console.log('\nPrêt. `npm run dist` produira l’installeur avec ces ressources embarquées.')
+  const wzip = argVal('--whisper-zip')
+  const wdir = argVal('--whisper-dir')
+  if (wzip) {
+    await embedWhisperFromZip(wzip).catch((e) => console.warn('! whisper.cpp zip :', e.message))
+  } else if (wdir) {
+    flattenBinaries(wdir)
+    console.log('✓ binaires whisper.cpp copiés depuis', wdir)
+  } else {
+    console.log('· binaire whisper.cpp non embarqué (--whisper-zip <url> ou --whisper-dir <dossier>)')
+  }
+  // Normalise le nom attendu par transcribe.js
+  if (!fs.existsSync(join(BIN, 'whisper-cli.exe')) && fs.existsSync(join(BIN, 'main.exe'))) {
+    fs.copyFileSync(join(BIN, 'main.exe'), join(BIN, 'whisper-cli.exe'))
+  }
+  const hasWhisper = fs.existsSync(join(BIN, 'whisper-cli.exe'))
+  const hasModel = fs.existsSync(MODELS) && fs.readdirSync(MODELS).some((f) => /\.(bin|gguf)$/i.test(f))
+  console.log(`\nTranscription hors-ligne embarquée : ${hasWhisper && hasModel ? 'OUI ✓' : 'NON (binaire whisper.cpp ' + (hasWhisper ? 'ok' : 'manquant') + ', modèle ' + (hasModel ? 'ok' : 'manquant') + ')'}`)
+  console.log('Prêt. `npm run dist` produira l’installeur avec ces ressources embarquées.')
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

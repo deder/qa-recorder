@@ -7,8 +7,12 @@ import { transcriptionPlan } from './gpu.js'
 
 // Localise un binaire whisper.cpp embarqué (cible distribuable, jalon J4).
 function whisperCppBin() {
-  const p = join(process.resourcesPath || '', 'bin', 'whisper-cli.exe')
-  return fs.existsSync(p) ? p : null
+  const dir = join(process.resourcesPath || '', 'bin')
+  for (const name of ['whisper-cli.exe', 'main.exe']) {
+    const p = join(dir, name)
+    if (fs.existsSync(p)) return p
+  }
+  return null
 }
 function whisperCppModel() {
   const dir = join(process.resourcesPath || '', 'models')
