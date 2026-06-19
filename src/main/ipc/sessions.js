@@ -63,7 +63,8 @@ export function registerSessionsIpc() {
       durationSec: 0,
       status: STATUS.PROCESSING,
       procStep: 0,
-      procPct: 0,
+      procPct: 3,
+      procDetail: 'Copie du fichier importé…',
       hue: '#8218E2',
       imported: true,
       copying: true, // tant que true, l'écran Traitement n'auto-lance pas le pipeline

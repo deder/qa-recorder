@@ -18,6 +18,7 @@ export default function App() {
   const [settings, setSettings] = useState(null)
   const [version, setVersion] = useState('0.9.2')
   const [credits, setCredits] = useState(null)
+  const [importing, setImporting] = useState(false)
   // État d'enregistrement GLOBAL (persiste quand on change d'écran)
   const [rec, setRec] = useState({ active: false, state: 'idle', sessionId: null, elapsed: 0 })
 
@@ -110,8 +111,13 @@ export default function App() {
   }, [rec.sessionId, refreshSessions])
 
   const importVideo = useCallback(async () => {
-    const id = await api.sessions.import()
-    if (id) { setSelectedId(id); setScreen('processing') }
+    setImporting(true)
+    try {
+      const id = await api.sessions.import()
+      if (id) { setSelectedId(id); setScreen('processing') }
+    } finally {
+      setImporting(false)
+    }
   }, [])
 
   const replayMode = screen === 'replay'
@@ -135,6 +141,15 @@ export default function App() {
           {screen === 'settings' && <Settings onSaved={(s) => { setSettings(s); refreshCredits() }} />}
         </main>
       </div>
+
+      {importing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,25,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '28px 36px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, boxShadow: '0 24px 70px rgba(0,0,84,0.28)' }}>
+            <div style={{ width: 30, height: 30, border: '3px solid #C9DCF2', borderTopColor: '#0C8CE9', borderRadius: 100, animation: 'spin 0.8s linear infinite' }} />
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#000054' }}>Préparation de l’import…</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
