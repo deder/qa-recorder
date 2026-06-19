@@ -31,7 +31,8 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
       setError(res.meta.error || '')
       setEta(res.meta.procEta ?? null)
       setDetail(res.meta.procDetail || '')
-      if (res.meta.status === 'PROCESSING') api.sessions.process(sessionId, false)
+      // Ne pas relancer le pipeline pendant la copie d'un import (le handler d'import s'en charge).
+      if (res.meta.status === 'PROCESSING' && !res.meta.copying) api.sessions.process(sessionId, false)
     })
     const off = api.sessions.onProgress((p) => {
       if (p.id !== sessionId) return

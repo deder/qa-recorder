@@ -2,9 +2,11 @@ import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { join, basename } from 'node:path'
 import fs from 'node:fs'
 import { listSessions, loadSession, saveBugs, deleteSession, writeMeta, readMeta, sessionDir } from '../sessions/store.js'
-import { runPipeline } from '../pipeline.js'
+import { runPipeline, abortPipeline } from '../pipeline.js'
 import { STATUS } from '../sessions/steps.js'
 import { currentId, abortRecording } from '../recorder.js'
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function broadcast(channel, payload) {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
@@ -21,10 +23,16 @@ export function registerSessionsIpc() {
     return true
   })
 
-  // Supprime une session (en avortant l'enregistrement si c'est la session en cours).
+  // Supprime une session (en avortant enregistrement ET traitement en cours).
   ipcMain.handle('sessions:delete', async (e, id) => {
     if (currentId() === id) {
       try { await abortRecording() } catch (err) { console.error(err) }
+    }
+    abortPipeline(id) // tue ffmpeg/whisper en cours pour libérer les fichiers
+    // Les process tués relâchent les verrous avec un léger délai → quelques tentatives.
+    for (let i = 0; i < 5; i++) {
+      if (deleteSession(id)) return true
+      await sleep(250)
     }
     return deleteSession(id)
   })
@@ -58,12 +66,15 @@ export function registerSessionsIpc() {
       procPct: 0,
       hue: '#8218E2',
       imported: true,
+      copying: true, // tant que true, l'écran Traitement n'auto-lance pas le pipeline
     })
     // Copie (potentiellement lourde) + pipeline en tâche de fond — ne bloque pas le retour.
     ;(async () => {
       try {
         broadcast('sessions:progress', { id, status: STATUS.PROCESSING, step: 0, pct: 3, detail: 'Copie du fichier importé…' })
         await fs.promises.copyFile(src, join(sessionDir(id), `session.${ext}`))
+        const m = readMeta(id)
+        writeMeta(id, { ...m, copying: false })
         runPipeline(id, false, broadcast)
       } catch (err) {
         console.error('import failed', err)

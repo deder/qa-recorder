@@ -1,15 +1,27 @@
 import { join } from 'node:path'
 import fs from 'node:fs'
 import { sessionDir, readMeta, writeMeta } from './sessions/store.js'
-import { findDemoVideo } from './sessions/seed.js'
 import { runFfmpeg, probeDuration, hasAudioStream } from './ffmpeg.js'
 import { STATUS, PROC_STEPS } from './sessions/steps.js'
-
-// J3 remplacera transcribeStep + analyzeStep par whisper.cpp + OpenRouter.
 import { transcribe as realTranscribe } from './transcribe.js'
 import { analyze as realAnalyze } from './analyze.js'
 
 const running = new Set()
+const aborted = new Set()
+const procs = new Map() // id -> Set<ChildProcess> (pour annuler/tuer le traitement)
+
+export function registerProc(id, child) {
+  if (!procs.has(id)) procs.set(id, new Set())
+  const set = procs.get(id)
+  set.add(child)
+  child.on('close', () => set.delete(child))
+}
+
+// Annule un traitement en cours (tue les process ffmpeg/whisper) — utilisé par la suppression.
+export function abortPipeline(id) {
+  aborted.add(id)
+  for (const c of procs.get(id) || []) { try { c.kill('SIGKILL') } catch { /* noop */ } }
+}
 
 function listSegments(id) {
   const segDir = join(sessionDir(id), 'segments')
@@ -35,47 +47,46 @@ function isStepComplete(id, step) {
   }
 }
 
-async function finalizeStep(id, fromStart) {
+async function finalizeStep(id, fromStart, ctx) {
   const dir = sessionDir(id)
   const mkv = join(dir, 'session.mkv')
   const mp4 = join(dir, 'session.mp4')
   const segs = listSegments(id)
+  const onChild = (c) => ctx?.register?.(c)
 
   if (segs.length) {
     if (fromStart || !fs.existsSync(mkv)) {
       const listFile = join(dir, 'concat.txt')
       fs.writeFileSync(listFile, segs.map((s) => `file '${s.replace(/\\/g, '/')}'`).join('\n'), 'utf-8')
-      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', mkv])
+      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', mkv], { onChild })
     }
     return
   }
-  if (fs.existsSync(mkv)) return
-  // Aucun enregistrement (session démo / mock) : on retombe sur la vidéo de démonstration.
-  if (!fs.existsSync(mp4)) {
-    const demo = findDemoVideo()
-    if (demo) fs.copyFileSync(demo, mp4)
-  }
+  // Enregistrement maison (MKV) ou vidéo importée (MP4/MKV) : la source doit exister.
+  if (fs.existsSync(mkv) || fs.existsSync(mp4)) return
+  throw new Error('Aucun fichier vidéo pour cette session.')
 }
 
-async function convertStep(id, fromStart) {
+async function convertStep(id, fromStart, ctx) {
   const dir = sessionDir(id)
   const mkv = join(dir, 'session.mkv')
   const mp4 = join(dir, 'session.mp4')
   const wav = join(dir, 'audio.wav')
+  const onChild = (c) => ctx?.register?.(c)
 
   if (fs.existsSync(mkv) && (fromStart || !fs.existsSync(mp4))) {
     try {
-      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', mkv, '-c', 'copy', '-movflags', '+faststart', mp4])
+      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', mkv, '-c', 'copy', '-movflags', '+faststart', mp4], { onChild })
     } catch {
       // codecs incompatibles avec MP4 → ré-encodage
-      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', mkv, '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-movflags', '+faststart', mp4])
+      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', mkv, '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac', '-movflags', '+faststart', mp4], { onChild })
     }
   }
 
   const audioSrc = fs.existsSync(mkv) ? mkv : mp4
   if (fs.existsSync(audioSrc) && (fromStart || !fs.existsSync(wav))) {
     if (await hasAudioStream(audioSrc)) {
-      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSrc, '-vn', '-ac', '1', '-ar', '16000', wav])
+      await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSrc, '-vn', '-ac', '1', '-ar', '16000', wav], { onChild })
     }
   }
 
@@ -110,11 +121,15 @@ export async function runPipeline(id, fromStart, broadcast) {
     }
 
     for (let step = start; step < STEP_FNS.length; step++) {
+      if (aborted.has(id)) throw new Error('Traitement annulé')
       const m = readMeta(id)
       writeMeta(id, { ...m, status: STATUS.PROCESSING, procStep: step, procPct: 0, procDetail: null, procEta: null, error: null })
       emit({ status: STATUS.PROCESSING, step, pct: 5 })
 
-      const ctx = { emit: (pct, extra = {}) => { const mm = readMeta(id); writeMeta(id, { ...mm, procPct: pct, procDetail: extra.detail ?? null, procEta: extra.eta ?? null }); emit({ status: STATUS.PROCESSING, step, pct, ...extra }) } }
+      const ctx = {
+        register: (child) => registerProc(id, child),
+        emit: (pct, extra = {}) => { const mm = readMeta(id); writeMeta(id, { ...mm, procPct: pct, procDetail: extra.detail ?? null, procEta: extra.eta ?? null }); emit({ status: STATUS.PROCESSING, step, pct, ...extra }) },
+      }
       await STEP_FNS[step](id, fromStart, ctx)
 
       emit({ status: STATUS.PROCESSING, step, pct: 100 })
@@ -124,11 +139,20 @@ export async function runPipeline(id, fromStart, broadcast) {
     writeMeta(id, { ...m, status: STATUS.PRETE, procStep: PROC_STEPS.length, procPct: 100, error: null })
     emit({ status: STATUS.PRETE, step: PROC_STEPS.length, pct: 100, done: true })
   } catch (e) {
-    console.error('pipeline failed', e)
-    const m = readMeta(id)
-    writeMeta(id, { ...m, status: STATUS.ERREUR, error: String(e.message || e) })
-    emit({ status: STATUS.ERREUR, step: m?.procStep || 0, error: String(e.message || e) })
+    if (aborted.has(id)) {
+      // Annulé volontairement (suppression) — pas un échec à signaler.
+      console.log('pipeline aborted', id)
+    } else {
+      console.error('pipeline failed', e)
+      const m = readMeta(id)
+      if (m) {
+        writeMeta(id, { ...m, status: STATUS.ERREUR, error: String(e.message || e) })
+        emit({ status: STATUS.ERREUR, step: m.procStep || 0, error: String(e.message || e) })
+      }
+    }
   } finally {
     running.delete(id)
+    aborted.delete(id)
+    procs.delete(id)
   }
 }

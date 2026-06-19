@@ -52,6 +52,7 @@ function runWhisperCpp(bin, model, wav, outTxt, ctx) {
     const prefix = outTxt.replace(/\.txt$/, '')
     const args = ['-m', model, '-f', wav, '-l', 'fr', '-osrt', '-of', prefix]
     const p = spawn(bin, args, { windowsHide: true })
+    ctx?.register?.(p)
     p.stderr.on('data', (d) => {
       const s = d.toString()
       const m = s.match(/(\d+)%/)
@@ -83,6 +84,7 @@ function runFasterWhisper(wav, outTxt, plan, ctx) {
     const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
     const startWall = Date.now()
     const p = spawn('python', [script, wav, outTxt, plan.model, plan.device, plan.compute], { windowsHide: true, env })
+    ctx?.register?.(p)
     let err = ''
     let buf = ''
     p.stdout.on('data', (d) => {

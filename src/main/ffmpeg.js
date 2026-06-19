@@ -11,9 +11,11 @@ export function ffmpegPath() {
 }
 
 // Lance ffmpeg et résout à la fin (code 0). stderr accumulé pour diagnostic.
-export function runFfmpeg(args, { onStderr } = {}) {
+// onChild : reçoit le process enfant (pour pouvoir l'annuler/tuer).
+export function runFfmpeg(args, { onStderr, onChild } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath(), args, { windowsHide: true })
+    onChild?.(proc)
     let err = ''
     proc.stderr.on('data', (d) => {
       const s = d.toString()
