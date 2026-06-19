@@ -111,10 +111,10 @@ export async function runPipeline(id, fromStart, broadcast) {
 
     for (let step = start; step < STEP_FNS.length; step++) {
       const m = readMeta(id)
-      writeMeta(id, { ...m, status: STATUS.PROCESSING, procStep: step, procPct: 0, error: null })
+      writeMeta(id, { ...m, status: STATUS.PROCESSING, procStep: step, procPct: 0, procDetail: null, procEta: null, error: null })
       emit({ status: STATUS.PROCESSING, step, pct: 5 })
 
-      const ctx = { emit: (pct, extra = {}) => { const mm = readMeta(id); writeMeta(id, { ...mm, procPct: pct }); emit({ status: STATUS.PROCESSING, step, pct, ...extra }) } }
+      const ctx = { emit: (pct, extra = {}) => { const mm = readMeta(id); writeMeta(id, { ...mm, procPct: pct, procDetail: extra.detail ?? null, procEta: extra.eta ?? null }); emit({ status: STATUS.PROCESSING, step, pct, ...extra }) } }
       await STEP_FNS[step](id, fromStart, ctx)
 
       emit({ status: STATUS.PROCESSING, step, pct: 100 })

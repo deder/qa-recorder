@@ -120,7 +120,7 @@ export async function transcribe(id, fromStart, ctx) {
   }
   if (!fs.existsSync(wav)) throw new Error('Audio introuvable pour la transcription (audio.wav)')
 
-  ctx?.emit?.(8)
+  ctx?.emit?.(1, { detail: 'Chargement du modèle…' })
   const bin = whisperCppBin()
   const model = whisperCppModel()
   if (bin && model) {

@@ -29,6 +29,8 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
       setPct(res.meta.procPct || 0)
       setStatus(res.meta.status)
       setError(res.meta.error || '')
+      setEta(res.meta.procEta ?? null)
+      setDetail(res.meta.procDetail || '')
       if (res.meta.status === 'PROCESSING') api.sessions.process(sessionId, false)
     })
     const off = api.sessions.onProgress((p) => {
