@@ -136,7 +136,7 @@ export default function Sessions({ sessions, view, setView, global, onOpen, onNe
             <span style={{ fontSize: 17, lineHeight: 1 }}>＋</span> Nouvelle session
           </button>
           <div style={{ position: 'relative' }}>
-            <button className="hov-grey" onClick={() => setMenuOpen((o) => !o)} title="Plus d’options" style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #E5E7EB', background: '#fff', color: '#595987', fontSize: 20, fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}>⋯</button>
+            <button className="hov-grey" onClick={() => setMenuOpen((o) => !o)} title="Plus d’options" style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #E5E7EB', background: '#fff', color: '#595987', fontSize: 20, fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}>⋮</button>
             {menuOpen && (
               <>
                 <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
