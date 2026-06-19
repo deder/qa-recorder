@@ -54,10 +54,10 @@ export default function Settings({ onSaved }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={label}>Modèle d’analyse (OpenRouter)</div>
             <select value={s.analysisModel} onChange={set('analysisModel')} style={field}>
-              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet — qualité élevée</option>
+              <option value="anthropic/claude-sonnet-4.5">Claude Sonnet 4.5 — qualité élevée</option>
               <option value="openai/gpt-4o">GPT-4o — équilibré</option>
-              <option value="google/gemini-flash-1.5">Gemini Flash 1.5 — économique</option>
-              <option value="deepseek/deepseek-chat">DeepSeek Chat — très économique</option>
+              <option value="google/gemini-3.5-flash">Gemini 3.5 Flash — économique</option>
+              <option value="deepseek/deepseek-chat-v3.1">DeepSeek v3.1 — très économique</option>
             </select>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -8,6 +8,7 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
   const [step, setStep] = useState(0)
   const [pct, setPct] = useState(0)
   const [status, setStatus] = useState('PROCESSING')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -17,6 +18,7 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
       setStep(res.meta.procStep || 0)
       setPct(res.meta.procPct || 0)
       setStatus(res.meta.status)
+      setError(res.meta.error || '')
       if (res.meta.status === 'PROCESSING') api.sessions.process(sessionId, false)
     })
     const off = api.sessions.onProgress((p) => {
@@ -24,6 +26,8 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
       setStep(p.step)
       setPct(p.pct)
       setStatus(p.done ? 'PRETE' : p.status)
+      if (p.error) setError(p.error)
+      else if (p.status === 'PROCESSING') setError('')
     })
     return () => { alive = false; off() }
   }, [sessionId])
@@ -35,6 +39,7 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
     setStatus('PROCESSING')
     setStep(0)
     setPct(0)
+    setError('')
     api.sessions.process(sessionId, true)
   }
 
@@ -82,7 +87,7 @@ export default function Processing({ sessionId, onBack, onOpenReplay }) {
         {isError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 8, background: '#FDECEA', border: '1px solid #EB6F5D' }}>
             <span style={{ color: '#A13525', fontSize: 16 }}>⚠</span>
-            <div style={{ flex: 1, fontSize: 13, color: '#A13525' }}>L’analyse a échoué (clé API invalide ou quota dépassé). Vérifie tes réglages puis relance.</div>
+            <div style={{ flex: 1, fontSize: 13, color: '#A13525', wordBreak: 'break-word' }}>{error || 'Le traitement a échoué. Vérifie tes réglages puis relance.'}</div>
             <button className="hov-red" onClick={relaunch} style={{ height: 34, padding: '0 16px', borderRadius: 8, background: '#E64C35', color: '#fff', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>↻ Relancer</button>
           </div>
         )}

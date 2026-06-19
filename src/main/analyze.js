@@ -52,9 +52,14 @@ function extractJson(text) {
   return JSON.parse(t)
 }
 
+const DEPRECATED = {
+  'anthropic/claude-3.5-sonnet': 'anthropic/claude-sonnet-4.5',
+  'anthropic/claude-3.7-sonnet': 'anthropic/claude-sonnet-4.5',
+}
 function resolveModel(setting) {
+  if (setting && DEPRECATED[setting]) return DEPRECATED[setting]
   if (setting && setting.includes('/')) return setting
-  return 'anthropic/claude-3.5-sonnet'
+  return 'anthropic/claude-sonnet-4.5'
 }
 
 export async function analyze(id, fromStart, ctx) {
@@ -83,7 +88,6 @@ export async function analyze(id, fromStart, ctx) {
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM },
         { role: 'user', content: transcript },
@@ -93,7 +97,9 @@ export async function analyze(id, fromStart, ctx) {
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => '')
-    throw new Error(`OpenRouter ${resp.status} : ${body.slice(0, 300)}`)
+    let detail = body.slice(0, 300)
+    try { detail = JSON.parse(body)?.error?.message || detail } catch { /* garde le texte brut */ }
+    throw new Error(`OpenRouter ${resp.status} (${model}) : ${detail}`)
   }
   ctx?.emit?.(70)
 

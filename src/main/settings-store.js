@@ -8,12 +8,19 @@ function defaults() {
   return {
     storageDir: join(app.getPath('userData'), 'sessions'),
     openrouterKey: '',
-    analysisModel: 'anthropic/claude-3.5-sonnet',
+    analysisModel: 'anthropic/claude-sonnet-4.5',
     transcriptionModel: 'large-v3',
     resolution: '1920 × 1080',
     fps: '30 fps',
     computeMode: 'auto', // auto | gpu | cpu
   }
+}
+
+// Ids de modèles OpenRouter obsolètes -> remplacement valide.
+const DEPRECATED_MODELS = {
+  'anthropic/claude-3.5-sonnet': 'anthropic/claude-sonnet-4.5',
+  'anthropic/claude-3.7-sonnet': 'anthropic/claude-sonnet-4.5',
+  'Analyse — qualité élevée': 'anthropic/claude-sonnet-4.5',
 }
 
 let cache = null
@@ -27,6 +34,7 @@ export function getSettings() {
     data = {}
   }
   cache = { ...defaults(), ...data }
+  if (DEPRECATED_MODELS[cache.analysisModel]) cache.analysisModel = DEPRECATED_MODELS[cache.analysisModel]
   return cache
 }
 
