@@ -66,8 +66,16 @@ async function embedWhisperFromZip(url) {
   fs.mkdirSync(tmp, { recursive: true })
   const zip = join(tmp, 'whisper.zip')
   await download(url, zip)
-  const r = spawnSync('tar', ['-xf', zip, '-C', tmp], { encoding: 'utf-8' })
-  if (r.status !== 0) throw new Error('extraction échouée (tar) : ' + (r.stderr || ''))
+  // Extraction du .zip. Sous Windows on privilégie Expand-Archive (PowerShell) : fiable
+  // quel que soit le `tar` du PATH (bsdtar prend "D:\" pour un hôte distant, GNU tar ne
+  // lit pas les zip). Ailleurs (ou en repli) : tar avec chemin relatif depuis cwd=tmp.
+  let r
+  if (process.platform === 'win32') {
+    r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', "Expand-Archive -LiteralPath 'whisper.zip' -DestinationPath '.' -Force"], { cwd: tmp, encoding: 'utf-8' })
+  } else {
+    r = spawnSync('tar', ['-xf', 'whisper.zip'], { cwd: tmp, encoding: 'utf-8' })
+  }
+  if (r.status !== 0) throw new Error('extraction échouée : ' + (r.stderr || r.error?.message || ''))
   flattenBinaries(tmp)
   fs.rmSync(tmp, { recursive: true, force: true })
 }
