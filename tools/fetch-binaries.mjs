@@ -1,8 +1,11 @@
-// Peuple resources/{bin,models,py} pour l'embarquement (electron-builder extraResources).
-// - ffmpeg.exe + ffprobe.exe : copiés depuis l'installation locale (ou le PATH).
-// - sidecar Python : copié (fallback faster-whisper).
-// - modèle GGUF whisper.cpp : téléchargé sur demande (gros) — `node tools/fetch-binaries.mjs --model large-v3-turbo`.
-// - binaire whisper.cpp : `--whisper <url-zip>` (best-effort).
+// Peuple resources/ pour l'embarquement (electron-builder extraResources).
+// - ffmpeg.exe + ffprobe.exe : copiés depuis l'installation locale (ou le PATH) -> resources/bin
+// - sidecar Python : copié -> resources/py (fallback faster-whisper)
+// - modèle GGUF whisper.cpp : téléchargé sur demande -> resources/models  (--model large-v3-turbo-q5_0)
+// - serveur whisper.cpp CPU  : --whisper-cpu-zip <url>  -> resources/whisper-cpu
+// - serveur whisper.cpp CUDA : --whisper-cuda-zip <url> -> resources/whisper-cuda
+// Les deux builds (CPU/CUDA) ont des DLLs incompatibles -> dossiers SÉPARÉS. Le runtime
+// (whisper-service.js) choisit le dossier au démarrage selon la présence d'un GPU NVIDIA.
 import { spawnSync } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import fs from 'node:fs'
@@ -11,9 +14,12 @@ import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const BIN = join(ROOT, 'resources', 'bin')
-const MODELS = join(ROOT, 'resources', 'models')
-const PY = join(ROOT, 'resources', 'py')
+const RES = join(ROOT, 'resources')
+const BIN = join(RES, 'bin')
+const MODELS = join(RES, 'models')
+const PY = join(RES, 'py')
+const WHISPER_CPU = join(RES, 'whisper-cpu')
+const WHISPER_CUDA = join(RES, 'whisper-cuda')
 for (const d of [BIN, MODELS, PY]) fs.mkdirSync(d, { recursive: true })
 
 const args = process.argv.slice(2)
@@ -52,23 +58,35 @@ async function download(url, dest) {
   console.log(`✓ ${dest} (${Math.round(fs.statSync(dest).size / 1e6)} Mo)`)
 }
 
-// Aplatit les .exe/.dll trouvés (récursif) vers resources/bin.
-function flattenBinaries(fromDir) {
+// Aplatit récursivement les .exe/.dll trouvés vers destDir.
+function flattenBinaries(fromDir, destDir) {
   for (const e of fs.readdirSync(fromDir, { withFileTypes: true })) {
     const p = join(fromDir, e.name)
-    if (e.isDirectory()) flattenBinaries(p)
-    else if (/\.(exe|dll)$/i.test(e.name)) fs.copyFileSync(p, join(BIN, e.name))
+    if (e.isDirectory()) flattenBinaries(p, destDir)
+    else if (/\.(exe|dll)$/i.test(e.name)) fs.copyFileSync(p, join(destDir, e.name))
   }
 }
 
-async function embedWhisperFromZip(url) {
-  const tmp = join(BIN, '_whisper_tmp')
+// Normalise les noms attendus par le runtime dans un dossier whisper.
+function normalizeWhisper(dir) {
+  if (!fs.existsSync(join(dir, 'whisper-cli.exe')) && fs.existsSync(join(dir, 'main.exe'))) {
+    fs.copyFileSync(join(dir, 'main.exe'), join(dir, 'whisper-cli.exe'))
+  }
+  if (!fs.existsSync(join(dir, 'whisper-server.exe')) && fs.existsSync(join(dir, 'server.exe'))) {
+    fs.copyFileSync(join(dir, 'server.exe'), join(dir, 'whisper-server.exe'))
+  }
+}
+
+// Télécharge un zip de release whisper.cpp et l'extrait (à plat) dans destDir.
+async function embedWhisperZip(url, destDir, label) {
+  fs.rmSync(destDir, { recursive: true, force: true }) // repart propre (évite les builds mélangés)
+  fs.mkdirSync(destDir, { recursive: true })
+  const tmp = join(destDir, '_tmp')
   fs.mkdirSync(tmp, { recursive: true })
   const zip = join(tmp, 'whisper.zip')
   await download(url, zip)
-  // Extraction du .zip. Sous Windows on privilégie Expand-Archive (PowerShell) : fiable
-  // quel que soit le `tar` du PATH (bsdtar prend "D:\" pour un hôte distant, GNU tar ne
-  // lit pas les zip). Ailleurs (ou en repli) : tar avec chemin relatif depuis cwd=tmp.
+  // Extraction du .zip. Sous Windows : Expand-Archive (PowerShell), fiable quel que soit le
+  // `tar` du PATH (bsdtar prend "D:\" pour un hôte distant, GNU tar ne lit pas les zip).
   let r
   if (process.platform === 'win32') {
     r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', "Expand-Archive -LiteralPath 'whisper.zip' -DestinationPath '.' -Force"], { cwd: tmp, encoding: 'utf-8' })
@@ -76,8 +94,14 @@ async function embedWhisperFromZip(url) {
     r = spawnSync('tar', ['-xf', 'whisper.zip'], { cwd: tmp, encoding: 'utf-8' })
   }
   if (r.status !== 0) throw new Error('extraction échouée : ' + (r.stderr || r.error?.message || ''))
-  flattenBinaries(tmp)
+  flattenBinaries(tmp, destDir)
   fs.rmSync(tmp, { recursive: true, force: true })
+  normalizeWhisper(destDir)
+  console.log(`✓ whisper.cpp ${label} -> ${destDir.replace(ROOT, '.')}`)
+}
+
+function hasServer(dir) {
+  return fs.existsSync(join(dir, 'whisper-server.exe'))
 }
 
 async function main() {
@@ -91,36 +115,25 @@ async function main() {
     if (fs.existsSync(dest)) console.log(`= modèle déjà présent : ${dest}`)
     else await download(`https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model}.bin`, dest)
   } else {
-    console.log('· modèle Whisper non téléchargé (ajoute --model large-v3-turbo pour l’embarquer)')
+    console.log('· modèle Whisper non téléchargé (ajoute --model large-v3-turbo-q5_0 pour l’embarquer)')
   }
 
-  const wzip = argVal('--whisper-zip')
-  const wdir = argVal('--whisper-dir')
-  if (wzip) {
-    await embedWhisperFromZip(wzip).catch((e) => console.warn('! whisper.cpp zip :', e.message))
-  } else if (wdir) {
-    flattenBinaries(wdir)
-    console.log('✓ binaires whisper.cpp copiés depuis', wdir)
-  } else {
-    console.log('· binaire whisper.cpp non embarqué (--whisper-zip <url> ou --whisper-dir <dossier>)')
-  }
-  // Normalise les noms attendus par le runtime (transcribe.js / whisper-service.js).
-  // CLI one-shot : main.exe -> whisper-cli.exe. Serveur résident : server.exe -> whisper-server.exe.
-  if (!fs.existsSync(join(BIN, 'whisper-cli.exe')) && fs.existsSync(join(BIN, 'main.exe'))) {
-    fs.copyFileSync(join(BIN, 'main.exe'), join(BIN, 'whisper-cli.exe'))
-  }
-  if (!fs.existsSync(join(BIN, 'whisper-server.exe')) && fs.existsSync(join(BIN, 'server.exe'))) {
-    fs.copyFileSync(join(BIN, 'server.exe'), join(BIN, 'whisper-server.exe'))
-  }
-  const hasServer = fs.existsSync(join(BIN, 'whisper-server.exe'))
-  const hasCli = fs.existsSync(join(BIN, 'whisper-cli.exe'))
+  const cpuZip = argVal('--whisper-cpu-zip')
+  const cudaZip = argVal('--whisper-cuda-zip')
+  if (cpuZip) await embedWhisperZip(cpuZip, WHISPER_CPU, 'CPU').catch((e) => console.warn('! whisper CPU :', e.message))
+  if (cudaZip) await embedWhisperZip(cudaZip, WHISPER_CUDA, 'CUDA').catch((e) => console.warn('! whisper CUDA :', e.message))
+  if (!cpuZip && !cudaZip) console.log('· serveurs whisper.cpp non (re)téléchargés (--whisper-cpu-zip / --whisper-cuda-zip)')
+
+  const okCpu = hasServer(WHISPER_CPU)
+  const okCuda = hasServer(WHISPER_CUDA)
   const hasModel = fs.existsSync(MODELS) && fs.readdirSync(MODELS).some((f) => /\.(bin|gguf)$/i.test(f))
-  // Le serveur résident est la cible autonome préférée ; la CLI suffit pour un fallback one-shot.
-  const ok = (hasServer || hasCli) && hasModel
-  const bin = hasServer ? 'serveur ok' : hasCli ? 'CLI seule (pas de serveur résident)' : 'manquant'
-  console.log(`\nTranscription hors-ligne embarquée : ${ok ? 'OUI ✓' : 'NON'} (binaire whisper.cpp : ${bin}, modèle ${hasModel ? 'ok' : 'manquant'})`)
-  if (ok && !hasServer) console.log('  ⚠ Pas de whisper-server.exe : le modèle sera rechargé à chaque transcription (mode one-shot).')
-  console.log('Prêt. `npm run dist` produira l’installeur avec ces ressources embarquées.')
+  const ok = (okCpu || okCuda) && hasModel
+  console.log(`\nTranscription hors-ligne embarquée : ${ok ? 'OUI ✓' : 'NON'}`)
+  console.log(`  serveur CPU  : ${okCpu ? 'ok' : 'absent'}`)
+  console.log(`  serveur CUDA : ${okCuda ? 'ok' : 'absent'} (GPU NVIDIA)`)
+  console.log(`  modèle       : ${hasModel ? 'ok' : 'absent'}`)
+  if (ok && !okCpu) console.log('  ⚠ Pas de build CPU : les machines sans NVIDIA n’auront pas de transcription autonome.')
+  console.log('Prêt. `npm run pack` / `npm run dist` embarquera ces ressources.')
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

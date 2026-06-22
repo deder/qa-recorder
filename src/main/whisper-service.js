@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import { srtToTxt } from './srt.js'
+import { hasNvidiaGpu } from './gpu.js'
 
 // Serveur whisper.cpp RÉSIDENT : lancé une fois au démarrage de l'app, il charge le
 // modèle GGUF en mémoire et reste vivant jusqu'à la fermeture. Chaque transcription
@@ -26,14 +27,31 @@ export function getWhisperStatus() {
   return lastStatus
 }
 
-function binDir() {
-  return join(process.resourcesPath || '', 'bin')
-}
-function serverBin() {
+function serverIn(dir) {
   for (const name of ['whisper-server.exe', 'server.exe']) {
-    const p = join(binDir(), name)
+    const p = join(dir, name)
     if (fs.existsSync(p)) return p
   }
+  return null
+}
+
+// Choisit le build whisper.cpp selon la présence d'un GPU NVIDIA :
+// - whisper-cuda (GPU) si NVIDIA détecté ET build présent,
+// - sinon whisper-cpu, sinon le seul build dispo, sinon l'ancien layout (resources/bin).
+// forceCpu : impose le build CPU (repli si le serveur GPU n'a pas démarré).
+function resolveServer(forceCpu) {
+  const base = process.resourcesPath || ''
+  const cudaDir = join(base, 'whisper-cuda')
+  const cpuDir = join(base, 'whisper-cpu')
+  const legacyDir = join(base, 'bin')
+  const cuda = serverIn(cudaDir)
+  const cpu = serverIn(cpuDir)
+  const legacy = serverIn(legacyDir)
+  const wantGpu = !forceCpu && hasNvidiaGpu()
+  if (wantGpu && cuda) return { exe: cuda, dir: cudaDir, mode: 'gpu' }
+  if (cpu) return { exe: cpu, dir: cpuDir, mode: 'cpu' }
+  if (cuda) return { exe: cuda, dir: cudaDir, mode: 'gpu' }
+  if (legacy) return { exe: legacy, dir: legacyDir, mode: 'cpu' }
   return null
 }
 function modelPath() {
@@ -76,31 +94,34 @@ export function isWhisperServerReady() {
   return !!state?.ready
 }
 
-export async function startWhisperService(broadcast) {
+export async function startWhisperService(broadcast, opts = {}) {
   if (broadcast) broadcaster = broadcast
   if (state && (state.ready || state.starting)) return
-  const bin = serverBin()
   const model = modelPath()
-  if (!bin || !model) {
+  const srv = resolveServer(opts.forceCpu)
+  if (!srv || !model) {
     state = { unavailable: true }
-    emitStatus({ state: 'unavailable', reason: bin ? 'no-model' : 'no-binary' })
+    emitStatus({ state: 'unavailable', reason: srv ? 'no-model' : 'no-binary' })
+    for (const j of opts.seed || []) { try { j.reject(new Error('whisper-server indisponible')) } catch { /* noop */ } }
     return
   }
 
   const port = await findFreePort()
-  state = { proc: null, port, ready: false, starting: true, queue: [], busy: false, active: null, stopping: false }
-  emitStatus({ state: 'loading' })
+  state = { proc: null, port, ready: false, starting: true, queue: [], busy: false, active: null, stopping: false, mode: srv.mode, triedCpu: !!opts.forceCpu }
+  for (const j of opts.seed || []) state.queue.push(j) // jobs re-enfilés après un repli GPU→CPU
+  emitStatus({ state: 'loading', mode: srv.mode })
 
   const threads = Math.max(1, (os.cpus()?.length || 4) - 1)
   const args = ['-m', model, '-l', 'fr', '--host', '127.0.0.1', '--port', String(port), '-t', String(threads)]
-  const proc = spawn(bin, args, { windowsHide: true })
+  // cwd = dossier du build : Windows y résout les DLLs (whisper.dll, ggml-cuda.dll, cublas…).
+  const proc = spawn(srv.exe, args, { windowsHide: true, cwd: srv.dir })
   state.proc = proc
 
   const markReady = () => {
     if (!state || state.ready) return
     state.ready = true
     state.starting = false
-    emitStatus({ state: 'ready' })
+    emitStatus({ state: 'ready', mode: state.mode })
     pump()
   }
   const scan = (s) => {
@@ -109,11 +130,15 @@ export async function startWhisperService(broadcast) {
   }
   proc.stdout.on('data', (d) => scan(d.toString()))
   proc.stderr.on('data', (d) => scan(d.toString()))
-  proc.on('error', (e) => failService(`whisper-server introuvable : ${e.message}`))
+  // Garde : ignore les événements d'un process déjà remplacé (redémarrage/repli) ou arrêté.
+  proc.on('error', (e) => {
+    if (!state || state.proc !== proc) return
+    onProcFail(`whisper-server introuvable : ${e.message}`)
+  })
   proc.on('close', (code) => {
-    if (!state) return
+    if (!state || state.proc !== proc) return
     if (state.stopping) { state = null; return }
-    failService(`whisper-server arrêté (code ${code})`)
+    onProcFail(`whisper-server arrêté (code ${code})`)
   })
 
   // Sonde TCP de secours : détecte la disponibilité même si la bannière stdout change selon les builds.
@@ -133,14 +158,23 @@ function markReadyExternal() {
   if (!state || state.ready) return
   state.ready = true
   state.starting = false
-  emitStatus({ state: 'ready' })
+  emitStatus({ state: 'ready', mode: state.mode })
   pump()
 }
 
-function failService(msg) {
-  const pending = state ? [...state.queue, ...(state.active ? [state.active] : [])] : []
-  if (state?.proc) { try { state.proc.kill() } catch { /* noop */ } }
+function onProcFail(msg) {
+  if (!state) return
+  const prev = state
+  const pending = [...prev.queue, ...(prev.active ? [prev.active] : [])]
+  try { prev.proc?.kill() } catch { /* noop */ }
   state = null
+  // Repli GPU → CPU : si le serveur GPU n'a jamais été prêt (driver/CUDA incompatible),
+  // on relance le build CPU et on re-enfile les jobs en attente.
+  if (prev.mode === 'gpu' && !prev.triedCpu && !prev.ready) {
+    console.warn('[whisper] serveur GPU en échec, repli sur le build CPU :', msg)
+    startWhisperService(broadcaster, { forceCpu: true, seed: pending })
+    return
+  }
   for (const j of pending) { try { j.reject(new Error(msg)) } catch { /* noop */ } }
   emitStatus({ state: 'error', reason: msg })
 }

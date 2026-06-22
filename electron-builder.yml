@@ -19,6 +19,14 @@ extraResources:
   - from: resources/py
     to: py
     filter: ['**/*']
+  # Serveurs whisper.cpp : build CPU et build CUDA (GPU NVIDIA) dans des dossiers séparés
+  # (DLLs incompatibles). Le runtime choisit selon la présence d'un GPU au démarrage.
+  - from: resources/whisper-cpu
+    to: whisper-cpu
+    filter: ['**/*']
+  - from: resources/whisper-cuda
+    to: whisper-cuda
+    filter: ['**/*']
 win:
   target:
     - nsis

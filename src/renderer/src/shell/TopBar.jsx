@@ -23,9 +23,10 @@ function CreditBadge({ credits }) {
 function WhisperBadge({ whisper }) {
   const s = whisper?.state
   if (!s || s === 'idle') return null
+  const gpu = whisper?.mode === 'gpu'
   const conf = {
-    loading: { label: 'Chargement du modèle…', icon: '⏳', fg: '#FFE2B0', bd: 'rgba(237,108,2,0.5)', bg: 'rgba(237,108,2,0.18)', tip: 'Chargement du modèle de transcription en mémoire…' },
-    ready: { label: 'Modèle prêt', icon: '✓', fg: '#86E0AC', bd: 'rgba(71,179,117,0.5)', bg: 'rgba(71,179,117,0.18)', tip: 'Modèle de transcription chargé et résident.' },
+    loading: { label: 'Chargement du modèle…', icon: '⏳', fg: '#FFE2B0', bd: 'rgba(237,108,2,0.5)', bg: 'rgba(237,108,2,0.18)', tip: `Chargement du modèle de transcription en mémoire… (${gpu ? 'GPU' : 'CPU'})` },
+    ready: { label: `Modèle prêt (${gpu ? 'GPU' : 'CPU'})`, icon: '✓', fg: '#86E0AC', bd: 'rgba(71,179,117,0.5)', bg: 'rgba(71,179,117,0.18)', tip: `Modèle de transcription chargé et résident (${gpu ? 'GPU NVIDIA' : 'CPU'}).` },
     unavailable: { label: 'Modèle absent', icon: '⚠', fg: '#FFD9D2', bd: 'rgba(230,76,53,0.45)', bg: 'rgba(230,76,53,0.18)', tip: 'Transcription hors-ligne non embarquée (whisper.cpp). Fallback Python si disponible.' },
     error: { label: 'Modèle en erreur', icon: '⚠', fg: '#FFD9D2', bd: 'rgba(230,76,53,0.5)', bg: 'rgba(230,76,53,0.18)', tip: whisper?.reason || 'Erreur du serveur de transcription.' },
   }[s]
