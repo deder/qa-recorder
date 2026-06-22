@@ -1,6 +1,7 @@
-import { app, BrowserWindow, protocol, net, session } from 'electron'
+import { app, BrowserWindow, protocol, session } from 'electron'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import fs from 'node:fs'
+import { Readable } from 'node:stream'
 import { getSessionsRoot } from './sessions/store.js'
 import { cleanupMockSessions } from './sessions/seed.js'
 import { registerWindowIpc } from './ipc/window.js'
@@ -48,14 +49,44 @@ function createWindow() {
 
 app.whenReady().then(() => {
   // media://local/<sessionId>/session.mp4  ->  <sessionsRoot>/<sessionId>/session.mp4
-  // On transmet les en-têtes de la requête (notamment Range) à net.fetch : sans cela
-  // la réponse est un 200 complet non-seekable et tout saut dans la vidéo (clic chapitre,
-  // drag de la barre) repart à 0. Avec le Range, net.fetch renvoie un 206 → seek OK.
+  // Le <video> a besoin de VRAIES réponses Range (206 + Content-Range) pour chercher une
+  // position : sinon tout saut (clic chapitre, drag de la barre) repart à 0. net.fetch sur
+  // file:// renvoie un 200 sans Content-Range (non-seekable) → on sert nous-mêmes la plage
+  // via fs (206 partiel, Accept-Ranges, Content-Range).
   protocol.handle('media', (request) => {
     const url = new URL(request.url)
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
     const filePath = join(getSessionsRoot(), rel)
-    return net.fetch(pathToFileURL(filePath).toString(), { headers: request.headers })
+
+    let size
+    try { size = fs.statSync(filePath).size } catch { return new Response(null, { status: 404 }) }
+    const type = filePath.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4'
+    const toWeb = (stream) => Readable.toWeb(stream)
+
+    const range = request.headers.get('range')
+    if (!range) {
+      return new Response(toWeb(fs.createReadStream(filePath)), {
+        status: 200,
+        headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' },
+      })
+    }
+
+    // Range: bytes=start-end (end optionnel)
+    const m = /bytes=(\d*)-(\d*)/.exec(range) || []
+    let start = m[1] ? parseInt(m[1], 10) : 0
+    let end = m[2] ? parseInt(m[2], 10) : size - 1
+    if (!Number.isFinite(start) || start < 0 || start >= size) start = 0
+    if (!Number.isFinite(end) || end >= size) end = size - 1
+    if (end < start) end = size - 1
+    return new Response(toWeb(fs.createReadStream(filePath, { start, end })), {
+      status: 206,
+      headers: {
+        'Content-Type': type,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(end - start + 1),
+      },
+    })
   })
 
   // Autorise micro / capture pour le VU-mètre et l'enregistrement (outil interne).
