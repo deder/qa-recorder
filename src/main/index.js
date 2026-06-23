@@ -22,6 +22,10 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow() {
+  // Icône de fenêtre = barre des tâches en dev. En production l'icône est intégrée
+  // à l'exécutable par electron-builder (build/icon.ico) et build/ n'est pas packagé,
+  // donc existsSync est faux et on retombe proprement sur l'icône de l'exe.
+  const iconPath = join(app.getAppPath(), 'build', 'icon.ico')
   const win = new BrowserWindow({
     width: 1360,
     height: 880,
@@ -30,6 +34,7 @@ function createWindow() {
     show: false,
     frame: false,
     backgroundColor: '#FAFBFB',
+    ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -48,6 +53,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Identité Windows : associe l'app en cours d'exécution au raccourci installé
+  // (même valeur que `appId`) -> regroupement et icône cohérents dans la barre des tâches.
+  if (process.platform === 'win32') app.setAppUserModelId('fr.allmanager.qarecorder')
+
   // media://local/<sessionId>/session.mp4  ->  <sessionsRoot>/<sessionId>/session.mp4
   // Le <video> a besoin de VRAIES réponses Range (206 + Content-Range) pour chercher une
   // position : sinon tout saut (clic chapitre, drag de la barre) repart à 0. net.fetch sur

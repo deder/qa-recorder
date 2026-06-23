@@ -36,7 +36,7 @@ export default function UserMenu({ version, go, onOpenStorage }) {
           {item('⚙', 'Réglages', () => go?.('settings'))}
           {item('▦', 'Ouvrir le dossier de stockage', () => onOpenStorage?.())}
           <div style={{ height: 1, background: '#E5E7EB', margin: '6px 4px' }} />
-          <div style={{ padding: '6px 12px', fontSize: 11.5, color: '#949DB2' }}>QA Session Recorder · v{version || '—'}</div>
+          <div style={{ padding: '6px 12px', fontSize: 11.5, color: '#949DB2' }}>DitBug · v{version || '—'}</div>
         </div>
       )}
     </div>

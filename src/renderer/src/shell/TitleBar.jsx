@@ -1,3 +1,5 @@
+import Logo from './Logo.jsx'
+
 const api = window.api
 
 const ctrl = {
@@ -26,8 +28,7 @@ export default function TitleBar() {
         userSelect: 'none',
       }}
     >
-      <div style={{ width: 16, height: 16, borderRadius: 4, background: '#000054', color: '#fff', fontSize: 8, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>QA</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#353538' }}>QA Session Recorder &amp; Reviewer</div>
+      <Logo height={24} tone="dark" />
       <div className="no-drag" style={{ marginLeft: 'auto', display: 'flex', height: 34 }}>
         <button className="hov-grey2" style={ctrl} onClick={() => api.win.minimize()}>─</button>
         <button className="hov-grey2" style={{ ...ctrl, fontSize: 11 }} onClick={() => api.win.toggleMaximize()}>▢</button>

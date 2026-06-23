@@ -28,6 +28,9 @@ extraResources:
     to: whisper-cuda
     filter: ['**/*']
 win:
+  # Icône de l'exécutable -> barre des tâches, bureau, menu Démarrer (intégrée à l'exe
+  # au packaging). Multi-tailles 16->256 px. Source vectorielle : build/icon.svg.
+  icon: build/icon.ico
   target:
     - nsis
   artifactName: ${productName}-${version}-setup.${ext}
@@ -36,3 +39,6 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   shortcutName: QA Session Recorder
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

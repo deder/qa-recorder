@@ -1,4 +1,5 @@
 import UserMenu from './UserMenu.jsx'
+import Logo from './Logo.jsx'
 
 function CreditBadge({ credits }) {
   if (!credits) return null
@@ -42,11 +43,7 @@ function WhisperBadge({ whisper }) {
 export default function TopBar({ gPct, gLabel, credits, whisper, onSearch, go, version, onOpenStorage }) {
   return (
     <div style={{ height: 56, flex: 'none', background: '#000054', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#fff' }}>
-        <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', color: '#000054', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>QA</div>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>Session Recorder</div>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.4px', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 100, padding: '2px 8px' }}>AllManager QA</div>
-      </div>
+      <Logo height={38} tone="light" />
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
