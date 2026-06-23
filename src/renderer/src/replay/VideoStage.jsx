@@ -1,9 +1,9 @@
 import { CATS } from '../lib/tokens.js'
 import { fmt } from '../lib/format.js'
 
-export default function VideoStage({ src, videoRef, onTime, onDuration, onToggle, onPlay, onPause, curBug }) {
+export default function VideoStage({ src, videoRef, onTime, onDuration, onToggle, onPlay, onPause, curBug, isFullscreen }) {
   return (
-    <div style={{ flex: 1, minHeight: 0, position: 'relative', borderRadius: 12, overflow: 'hidden', background: '#0d1b2a', border: '1px solid #d9deea' }}>
+    <div style={{ flex: 1, minHeight: 0, position: 'relative', borderRadius: isFullscreen ? 0 : 12, overflow: 'hidden', background: '#0d1b2a', border: isFullscreen ? 'none' : '1px solid #d9deea' }}>
       {src ? (
         <video
           ref={videoRef}

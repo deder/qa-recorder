@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import VideoStage from '../replay/VideoStage.jsx'
 import Transport from '../replay/Transport.jsx'
 import BugPanel from '../replay/BugPanel.jsx'
+import FullscreenChapters from '../replay/FullscreenChapters.jsx'
 import TicketsDialog from '../components/TicketsDialog.jsx'
 import { useKeyboardNav } from '../lib/useKeyboardNav.js'
 import { SEVS, STATUS_ORDER, FIXED_STATUSES } from '../lib/tokens.js'
@@ -181,9 +182,9 @@ export default function Replay({ sessionId, onBack }) {
         <button className="hov-navy" style={btn('#000054', '#fff')} onClick={() => setTicketsOpen(true)} disabled={!bugs.length} title="Créer des fiches dans Notion">＋ Générer les tickets</button>
       </div>
 
-      {/* body (mis en plein écran : vidéo + transport + liste de bugs) */}
-      <div ref={bodyRef} style={{ flex: 1, display: 'flex', minHeight: 0, background: isFs ? '#F4F6FA' : undefined }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', padding: 20, gap: 14 }}>
+      {/* body — en plein écran : vidéo plein cadre + transport en overlay + chapitres sombres */}
+      <div ref={bodyRef} style={{ flex: 1, display: 'flex', minHeight: 0, background: isFs ? '#0a0e16' : undefined }}>
+        <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: isFs ? '#0a0e16' : '#F4F6FA', padding: isFs ? 0 : 20, gap: isFs ? 0 : 14 }}>
           <VideoStage
             src={hasVideo ? api.mediaUrl(sessionId) : null}
             videoRef={videoRef}
@@ -192,41 +193,50 @@ export default function Replay({ sessionId, onBack }) {
             onToggle={togglePlay}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            curBug={activeBug}
-          />
-          <Transport
-            bugs={chrono}
-            duration={duration}
-            t={t}
-            activeId={activeId}
-            onSeek={seek}
-            playing={playing}
-            onToggle={togglePlay}
-            onPrev={prevBug}
-            onNext={nextBug}
-            activeIndex={activeIndex}
-            total={bugs.length}
-            onToggleFullscreen={toggleFullscreen}
+            curBug={isFs ? null : activeBug}
             isFullscreen={isFs}
           />
+          {/* En plein écran, le transport flotte au-dessus du bas de la vidéo (gain de hauteur).
+              display:contents en mode normal → Transport reste un enfant flex direct. */}
+          <div style={isFs ? { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '0 20px 18px' } : { display: 'contents' }}>
+            <Transport
+              bugs={chrono}
+              duration={duration}
+              t={t}
+              activeId={activeId}
+              onSeek={seek}
+              playing={playing}
+              onToggle={togglePlay}
+              onPrev={prevBug}
+              onNext={nextBug}
+              activeIndex={activeIndex}
+              total={bugs.length}
+              onToggleFullscreen={toggleFullscreen}
+              isFullscreen={isFs}
+            />
+          </div>
         </div>
 
-        <BugPanel
-          filtered={filtered}
-          q={q}
-          setQ={setQ}
-          sortMode={sortMode}
-          setSort={setSortMode}
-          catSet={catSet}
-          toggleCat={toggle(setCatSet)}
-          sevSet={sevSet}
-          toggleSev={toggle(setSevSet)}
-          activeId={activeId}
-          onSeek={seek}
-          onCycleStatus={cycleStatus}
-          onOpenNotion={openNotion}
-          catCounts={catCounts}
-        />
+        {isFs ? (
+          <FullscreenChapters bugs={chrono} activeId={activeId} onSeek={seek} />
+        ) : (
+          <BugPanel
+            filtered={filtered}
+            q={q}
+            setQ={setQ}
+            sortMode={sortMode}
+            setSort={setSortMode}
+            catSet={catSet}
+            toggleCat={toggle(setCatSet)}
+            sevSet={sevSet}
+            toggleSev={toggle(setSevSet)}
+            activeId={activeId}
+            onSeek={seek}
+            onCycleStatus={cycleStatus}
+            onOpenNotion={openNotion}
+            catCounts={catCounts}
+          />
+        )}
       </div>
 
       <TicketsDialog
