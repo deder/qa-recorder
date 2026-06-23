@@ -24,7 +24,22 @@ export default function Replay({ sessionId, onBack }) {
   const [ticketsOpen, setTicketsOpen] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [copyMsg, setCopyMsg] = useState('')
+  const [isFs, setIsFs] = useState(false)
   const videoRef = useRef(null)
+  const bodyRef = useRef(null)
+
+  // Plein écran de relecture : on bascule le « body » (vidéo + transport + liste de bugs)
+  // en plein écran → la liste reste visible à droite de la vidéo.
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else bodyRef.current?.requestFullscreen?.()
+  }, [])
+
+  useEffect(() => {
+    const onFsChange = () => setIsFs(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -166,8 +181,8 @@ export default function Replay({ sessionId, onBack }) {
         <button className="hov-navy" style={btn('#000054', '#fff')} onClick={() => setTicketsOpen(true)} disabled={!bugs.length} title="Créer des fiches dans Notion">＋ Générer les tickets</button>
       </div>
 
-      {/* body */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      {/* body (mis en plein écran : vidéo + transport + liste de bugs) */}
+      <div ref={bodyRef} style={{ flex: 1, display: 'flex', minHeight: 0, background: isFs ? '#F4F6FA' : undefined }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#F4F6FA', padding: 20, gap: 14 }}>
           <VideoStage
             src={hasVideo ? api.mediaUrl(sessionId) : null}
@@ -191,6 +206,8 @@ export default function Replay({ sessionId, onBack }) {
             onNext={nextBug}
             activeIndex={activeIndex}
             total={bugs.length}
+            onToggleFullscreen={toggleFullscreen}
+            isFullscreen={isFs}
           />
         </div>
 

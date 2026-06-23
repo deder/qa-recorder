@@ -2,12 +2,27 @@ import { useState } from 'react'
 import { SEVS } from '../lib/tokens.js'
 import { fmt } from '../lib/format.js'
 
-export default function Transport({ bugs, duration, t, activeId, onSeek, playing, onToggle, onPrev, onNext, activeIndex, total }) {
+export default function Transport({ bugs, duration, t, activeId, onSeek, playing, onToggle, onPrev, onNext, activeIndex, total, onToggleFullscreen, isFullscreen }) {
   const [hover, setHover] = useState(null)
   const pct = (x) => (duration > 0 ? Math.min(100, Math.max(0, (x / duration) * 100)) : 0)
   const playLeft = `${pct(t)}%`
 
   const round = { width: 36, height: 36, borderRadius: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#595987', cursor: 'pointer', fontSize: 14 }
+
+  // Clic / glisser sur le track → cherche la position correspondante.
+  const seekTo = (clientX, track) => {
+    const r = track.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width))
+    onSeek(ratio * duration)
+  }
+  const onTrackDown = (e) => {
+    const track = e.currentTarget
+    seekTo(e.clientX, track)
+    const move = (ev) => seekTo(ev.clientX, track)
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
 
   return (
     <div style={{ flex: 'none', background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -20,16 +35,24 @@ export default function Transport({ bugs, duration, t, activeId, onSeek, playing
         <div style={{ fontSize: 13, fontWeight: 700, color: '#000054', fontVariantNumeric: 'tabular-nums', marginLeft: 4 }}>
           {activeIndex >= 0 ? activeIndex + 1 : '—'} <span style={{ color: '#C0C3CE', fontWeight: 500 }}>/ {total}</span>
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 12, color: '#949DB2' }}>{fmt(t)} / {fmt(duration)} · ↑ ↓ chapitres · espace lecture</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 12, color: '#949DB2' }}>{fmt(t)} / {fmt(duration)} · ↑ ↓ chapitres · espace lecture</div>
+          {onToggleFullscreen && (
+            <button className="hov-grey2" style={round} onClick={onToggleFullscreen} title={isFullscreen ? 'Quitter le plein écran (Échap)' : 'Plein écran'}>
+              {isFullscreen ? '✕' : '⛶'}
+            </button>
+          )}
+        </div>
       </div>
 
-      <div style={{ position: 'relative', height: 40, padding: '14px 0' }}>
+      <div onMouseDown={onTrackDown} style={{ position: 'relative', height: 40, padding: '14px 0', cursor: 'pointer' }}>
         <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 6, transform: 'translateY(-50%)', background: '#EDEFF3', borderRadius: 100 }} />
         <div style={{ position: 'absolute', left: 0, top: '50%', height: 6, transform: 'translateY(-50%)', background: '#000054', borderRadius: 100, width: playLeft }} />
         {bugs.map((b) => (
           <button
             key={b.id}
-            onClick={() => onSeek(b.tc)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onSeek(b.tc) }}
             onMouseEnter={() => setHover(b)}
             onMouseLeave={() => setHover(null)}
             title={`#${b.id} · ${fmt(b.tc)} · ${b.title}`}
